@@ -38,6 +38,7 @@ import androidx.annotation.RestrictTo;
 public class ClippableRoundedCornerLayout extends FrameLayout {
 
   @Nullable private Path path;
+  @NonNull private float[] cornerRadii = new float[] {0, 0, 0, 0, 0, 0, 0, 0};
 
   public ClippableRoundedCornerLayout(@NonNull Context context) {
     super(context);
@@ -64,26 +65,37 @@ public class ClippableRoundedCornerLayout extends FrameLayout {
     canvas.restoreToCount(save);
   }
 
-  public void resetClipBoundsAndCornerRadius() {
+  public void resetClipBoundsAndCornerRadii() {
     path = null;
+    cornerRadii = new float[] {0, 0, 0, 0, 0, 0, 0, 0};
     invalidate();
   }
 
-  public void updateClipBoundsAndCornerRadius(@NonNull Rect rect, float cornerRadius) {
-    updateClipBoundsAndCornerRadius(rect.left, rect.top, rect.right, rect.bottom, cornerRadius);
+  @NonNull
+  public float[] getCornerRadii() {
+    return cornerRadii;
   }
 
-  public void updateClipBoundsAndCornerRadius(
-      float left, float top, float right, float bottom, float cornerRadius) {
-    updateClipBoundsAndCornerRadius(new RectF(left, top, right, bottom), cornerRadius);
+  public void updateCornerRadii(@NonNull float[] cornerRadii) {
+    updateClipBoundsAndCornerRadii(getLeft(), getTop(), getRight(), getBottom(), cornerRadii);
   }
 
-  public void updateClipBoundsAndCornerRadius(@NonNull RectF rectF, float cornerRadius) {
+  public void updateClipBoundsAndCornerRadii(@NonNull Rect rect, @NonNull float[] cornerRadii) {
+    updateClipBoundsAndCornerRadii(rect.left, rect.top, rect.right, rect.bottom, cornerRadii);
+  }
+
+  public void updateClipBoundsAndCornerRadii(
+      float left, float top, float right, float bottom, @NonNull float[] cornerRadii) {
+    updateClipBoundsAndCornerRadii(new RectF(left, top, right, bottom), cornerRadii);
+  }
+
+  public void updateClipBoundsAndCornerRadii(@NonNull RectF rectF, @NonNull float[] cornerRadii) {
     if (path == null) {
       path = new Path();
     }
+    this.cornerRadii = cornerRadii;
     path.reset();
-    path.addRoundRect(rectF, cornerRadius, cornerRadius, Path.Direction.CW);
+    path.addRoundRect(rectF, cornerRadii, Path.Direction.CW);
     path.close();
     invalidate();
   }

@@ -20,9 +20,15 @@ revert back to the previous style.
 
 **Contents**
 
+*   [Design and API Documentation](#design-and-api-documentation)
 *   [Using bottom app bars](#using-bottom-app-bars)
 *   [Bottom app bar](#bottom-app-bar)
 *   [Theming bottom app bars](#theming-bottom-app-bars)
+
+## Design and API Documentation
+
+*   [Google Material3 Spec](https://material.io/components/bottom-app-bar/overview)
+*   [API Reference](https://developer.android.com/reference/com/google/android/material/bottomappbar/package-summary)
 
 ## Using bottom app bars
 
@@ -67,8 +73,8 @@ in the menu:
 
 ## Bottom app bar
 
-Bottom app bars provide access to a bottom navigation drawer and up to four
-actions, including the floating action button.
+Bottom app bars provide access to up to four actions, including the
+[floating action button](FloatingActionButton.md) (FAB).
 
 ### Bottom app bar examples
 
@@ -230,7 +236,7 @@ floating action button (FAB), action item(s) and an overflow menu.
 
 Element       | Attribute                | Related method(s)                          | Default value
 ------------- | ------------------------ | ------------------------------------------ | -------------
-**Color**     | `app:backgroundTint`     | `setBackgroundTint`<br>`getBackgroundTint` | `?attr/colorSurface`
+**Color**     | `app:backgroundTint`     | `setBackgroundTint`<br>`getBackgroundTint` | `?attr/colorSurfaceContainer`
 **Elevation** | `app:elevation`          | `setElevation`                             | `3dp`
 **Height**    | `android:minHeight`      | `setMinimumHeight`<br>`getMinimumHeight`   | `80dp`
 **Shadows**   | `app:addElevationShadow` | N/A                                        | `false`
@@ -321,12 +327,12 @@ bottom app bars and FABs and affects other components:
 ```xml
 <style name="Theme.App" parent="Theme.Material3.*">
     ...
-    <item name="colorPrimary">@color/shrine_pink_100</item>
-    <item name="colorOnPrimary">@color/shrine_pink_900</item>
-    <item name="colorSecondary">@color/shrine_pink_50</item>
-    <item name="colorOnSecondary">@color/shrine_pink_900</item>
+    <item name="colorSurfaceContainer">@color/shrine_pink_100</item>
+    <item name="colorOnSurface">@color/shrine_pink_900</item>
+    <item name="colorPrimaryContainer">@color/shrine_pink_50</item>
+    <item name="colorOnPrimaryContainer">@color/shrine_pink_900</item>
     <item name="textAppearanceTitleMedium">@style/TextAppearance.App.Medium</item>
-    <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.App.SmallComponent</item>
+    <item name="shapeAppearanceCornerLarge">@style/ShapeAppearance.App.Corner.Large</item>
 </style>
 
 <style name="TextAppearance.App.Medium" parent="TextAppearance.Material3.TitleMedium">
@@ -334,9 +340,9 @@ bottom app bars and FABs and affects other components:
     <item name="android:fontFamily">@font/rubik</item>
 </style>
 
-<style name="ShapeAppearance.App.SmallComponent" parent="ShapeAppearance.Material3.SmallComponent">
+<style name="ShapeAppearance.App.Corner.Large" parent="ShapeAppearance.Material3.Corner.Large">
     <item name="cornerFamily">cut</item>
-    <item name="cornerSize">4dp</item>
+    <item name="cornerSize">50%</item>
 </style>
 ```
 
@@ -354,20 +360,20 @@ theme to all bottom app bars and FABs but does not affect other components:
     <item name="materialThemeOverlay">@style/ThemeOverlay.App.BottomAppBar</item>
 </style>
 
-<style name="Widget.App.FloatingActionButton" parent="Widget.Material3.FloatingActionButton">
+<style name="Widget.App.FloatingActionButton" parent="Widget.Material3.FloatingActionButton.Primary">
     <item name="materialThemeOverlay">@style/ThemeOverlay.App.FloatingActionButton</item>
 </style>
 
-<style name="ThemeOverlay.App.BottomAppBar" parent="">
-    <item name="colorPrimary">@color/shrine_pink_100</item>
-    <item name="colorOnPrimary">@color/shrine_pink_900</item>
+<style name="ThemeOverlay.App.BottomAppBar" parent="ThemeOverlay.Material3.BottomAppBar">
+    <item name="colorSurfaceContainer">@color/shrine_pink_100</item>
+    <item name="colorOnSurface">@color/shrine_pink_900</item>
     <item name="textAppearanceTitleMedium">@style/TextAppearance.App.TitleMedium</item>
 </style>
 
-<style name="ThemeOverlay.App.FloatingActionButton" parent="">
-    <item name="colorSecondary">@color/shrine_pink_50</item>
-    <item name="colorOnSecondary">@color/shrine_pink_900</item>
-    <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.App.SmallComponent</item>
+<style name="ThemeOverlay.App.FloatingActionButton" parent="ThemeOverlay.Material3.FloatingActionButton.Primary">
+    <item name="colorPrimaryContainer">@color/shrine_pink_50</item>
+    <item name="colorOnPrimaryContainer">@color/shrine_pink_900</item>
+    <item name="shapeAppearanceCornerLarge">@style/ShapeAppearance.App.Corner.Large</item>
 </style>
 ```
 
@@ -384,18 +390,3 @@ Use the styles in the layout, which affects only this bottom app bar and FAB:
     style="@style/Widget.App.FloatingActionButton"
     />
 ```
-
-In code:
-
-```kt
-val topEdge = BottomAppBarCutCornersTopEdge(
-    bottomAppBar.fabCradleMargin,
-    bottomAppBar.fabCradleRoundedCornerRadius,
-    bottomAppBar.cradleVerticalOffset
-)
-val background = bottomAppBar.background as MaterialShapeDrawable
-background.shapeAppearanceModel = background.shapeAppearanceModel.toBuilder().setTopEdge(topEdge).build()
-```
-
-**Note:** Using `BottomAppBarCutCornersTopEdge` is not necessary with rounded
-shapeAppearance corners.

@@ -55,7 +55,6 @@ import androidx.annotation.RestrictTo;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.coordinatorlayout.widget.CoordinatorLayout.AttachedBehavior;
 import androidx.core.graphics.drawable.DrawableCompat;
-import androidx.core.view.ViewCompat;
 import androidx.core.view.ViewCompat.NestedScrollType;
 import androidx.core.view.ViewCompat.ScrollAxis;
 import androidx.core.view.WindowInsetsCompat;
@@ -106,6 +105,11 @@ import java.util.List;
  * attribute to the correct color. For example, if the background of the BottomAppBar is {@code
  * colorSurface}, as it is in the default style, you should set {@code materialThemeOverlay} to
  * {@code @style/ThemeOverlay.MaterialComponents.BottomAppBar.Surface}.
+ *
+ * <p>For more information, see the <a
+ * href="https://github.com/material-components/material-components-android/blob/master/docs/components/BottomAppBar.md">component
+ * developer guidance</a> and <a
+ * href="https://material.io/components/bottom-app-bar/overview">design guidelines</a>.
  *
  * @attr ref com.google.android.material.R.styleable#BottomAppBar_backgroundTint
  * @attr ref com.google.android.material.R.styleable#BottomAppBar_fabAlignmentMode
@@ -368,9 +372,9 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
     }
     materialShapeDrawable.setPaintStyle(Style.FILL);
     materialShapeDrawable.initializeElevationOverlay(context);
+    materialShapeDrawable.setTintList(backgroundTint);
     setElevation(elevation);
-    DrawableCompat.setTintList(materialShapeDrawable, backgroundTint);
-    ViewCompat.setBackground(this, materialShapeDrawable);
+    setBackground(materialShapeDrawable);
 
     ViewUtils.doOnApplyWindowInsets(
         this,
@@ -558,7 +562,7 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
   }
 
   public void setBackgroundTint(@Nullable ColorStateList backgroundTint) {
-    DrawableCompat.setTintList(materialShapeDrawable, backgroundTint);
+    materialShapeDrawable.setTintList(backgroundTint);
   }
 
   @Nullable
@@ -815,7 +819,7 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
   }
 
   private void maybeAnimateModeChange(@FabAlignmentMode int targetMode) {
-    if (fabAlignmentMode == targetMode || !ViewCompat.isLaidOut(this)) {
+    if (fabAlignmentMode == targetMode || !isLaidOut()) {
       return;
     }
 
@@ -931,7 +935,7 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
   private Drawable maybeTintNavigationIcon(@Nullable Drawable navigationIcon) {
     if (navigationIcon != null && navigationIconTint != null) {
       Drawable wrappedNavigationIcon = DrawableCompat.wrap(navigationIcon.mutate());
-      DrawableCompat.setTint(wrappedNavigationIcon, navigationIconTint);
+      wrappedNavigationIcon.setTint(navigationIconTint);
       return wrappedNavigationIcon;
     } else {
       return navigationIcon;
@@ -939,7 +943,7 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
   }
 
   private void maybeAnimateMenuView(@FabAlignmentMode int targetMode, boolean newFabAttached) {
-    if (!ViewCompat.isLaidOut(this)) {
+    if (!isLaidOut()) {
       menuAnimatingWithFabAlignmentMode = false;
       // If this method is called before the BottomAppBar is laid out and able to animate, make sure
       // the desired menu is still set even if the animation is skipped.
@@ -1040,7 +1044,12 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
     if (fabAnchorMode == FAB_ANCHOR_MODE_CRADLE) {
       return -getTopEdgeTreatment().getCradleVerticalOffset();
     }
-    return 0;
+    View fab = findDependentView();
+    int translationY = 0;
+    if (fab != null) {
+      translationY = -(getMeasuredHeight() + getBottomInset() - fab.getMeasuredHeight()) / 2;
+    }
+    return translationY;
   }
 
   private float getFabTranslationX(@FabAlignmentMode int fabAlignmentMode) {
@@ -1188,6 +1197,12 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
       cancelAnimations();
 
       setCutoutStateAndTranslateFab();
+      // If the BAB layout has changed, we should alert the fab so that it can
+      // adjust its margins accordingly.
+      View dependentView = findDependentView();
+      if (dependentView != null && dependentView.isLaidOut()) {
+        dependentView.post(() -> dependentView.requestLayout());
+      }
     }
 
     // Always ensure the MenuView is in the correct position after a layout.
@@ -1358,24 +1373,16 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
             // adds space below the fab if the BottomAppBar is hidden.
             if (originalBottomMargin == 0) {
               // Extra padding is added for the fake shadow on API < 21. Ensure we don't add too
-              // much space by removing that extra padding.
-              int bottomShadowPadding = (v.getMeasuredHeight() - height) / 2;
-              int bottomMargin = 0;
+              // much space by removing that extra padding if the fab mode is cradle.
               if (child.fabAnchorMode == FAB_ANCHOR_MODE_CRADLE) {
-                bottomMargin =
+                int bottomShadowPadding = (v.getMeasuredHeight() - height) / 2;
+                int bottomMargin =
                     child
                         .getResources()
                         .getDimensionPixelOffset(R.dimen.mtrl_bottomappbar_fab_bottom_margin);
                 // Should be moved above the bottom insets with space ignoring any shadow padding.
                 int minBottomMargin = bottomMargin - bottomShadowPadding;
                 fabLayoutParams.bottomMargin = child.getBottomInset() + minBottomMargin;
-              } else if (child.fabAnchorMode == FAB_ANCHOR_MODE_EMBED) {
-                // We want to add a margin of half of the height of the bottom app bar, minus half
-                // the height of the fab to the bottom of the fab. Since the height of the bottom
-                // app bar does not include the bottom inset, must add it to the height.
-                fabLayoutParams.bottomMargin =
-                    (child.getMeasuredHeight() + child.getBottomInset() - v.getMeasuredHeight())
-                        / 2;
               }
               fabLayoutParams.leftMargin = child.getLeftInset();
               fabLayoutParams.rightMargin = child.getRightInset();
@@ -1386,6 +1393,7 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
                 fabLayoutParams.rightMargin += child.fabOffsetEndMode;
               }
             }
+            child.setCutoutStateAndTranslateFab();
           }
         };
 
@@ -1404,7 +1412,7 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
       viewRef = new WeakReference<>(child);
 
       View dependentView = child.findDependentView();
-      if (dependentView != null && !ViewCompat.isLaidOut(dependentView)) {
+      if (dependentView != null && !dependentView.isLaidOut()) {
         // Set the initial position of the FloatingActionButton with the BottomAppBar vertical
         // offset.
         updateFabAnchorGravity(child, dependentView);
@@ -1418,7 +1426,7 @@ public class BottomAppBar extends Toolbar implements AttachedBehavior {
         if (dependentView instanceof FloatingActionButton) {
           FloatingActionButton fab = ((FloatingActionButton) dependentView);
           if (child.fabAnchorMode == FAB_ANCHOR_MODE_EMBED && child.removeEmbeddedFabElevation) {
-            ViewCompat.setElevation(fab, 0);
+            fab.setElevation(0);
             fab.setCompatElevation(0);
           }
 

@@ -35,6 +35,9 @@ class DateStrings {
   private DateStrings() {}
 
   static String getYearMonth(long timeInMillis) {
+    if (VERSION.SDK_INT >= VERSION_CODES.N) {
+      return UtcDates.getYearMonthFormat(Locale.getDefault()).format(new Date(timeInMillis));
+    }
     int flags = DateUtils.FORMAT_SHOW_YEAR | DateUtils.FORMAT_NO_MONTH_DAY | DateUtils.FORMAT_UTC;
     return DateUtils.formatDateTime(null, timeInMillis, flags);
   }
@@ -87,7 +90,7 @@ class DateStrings {
 
   static String getMonthDayOfWeekDay(long timeInMillis, Locale locale) {
     if (VERSION.SDK_INT >= VERSION_CODES.N) {
-      return UtcDates.getAbbrMonthWeekdayDayFormat(locale).format(new Date(timeInMillis));
+      return UtcDates.getMonthWeekdayDayFormat(locale).format(new Date(timeInMillis));
     }
     return UtcDates.getFullFormat(locale).format(new Date(timeInMillis));
   }
@@ -98,7 +101,7 @@ class DateStrings {
 
   static String getYearMonthDayOfWeekDay(long timeInMillis, Locale locale) {
     if (VERSION.SDK_INT >= VERSION_CODES.N) {
-      return UtcDates.getYearAbbrMonthWeekdayDayFormat(locale).format(new Date(timeInMillis));
+      return UtcDates.getYearMonthWeekdayDayFormat(locale).format(new Date(timeInMillis));
     }
     return UtcDates.getFullFormat(locale).format(new Date(timeInMillis));
   }

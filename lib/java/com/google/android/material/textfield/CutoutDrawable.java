@@ -16,18 +16,12 @@
 
 package com.google.android.material.textfield;
 
-import android.annotation.TargetApi;
 import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.Paint.Style;
-import android.graphics.PorterDuff.Mode;
-import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
 import android.graphics.Region.Op;
+import android.graphics.drawable.Drawable;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
-import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.google.android.material.shape.MaterialShapeDrawable;
@@ -38,31 +32,42 @@ import com.google.android.material.shape.ShapeAppearanceModel;
  * outline mode.
  */
 class CutoutDrawable extends MaterialShapeDrawable {
-  @NonNull protected final RectF cutoutBounds;
+  @NonNull CutoutDrawableState drawableState;
 
   static CutoutDrawable create(@Nullable ShapeAppearanceModel shapeAppearanceModel) {
-    return VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN_MR2
-        ? new ImplApi18(shapeAppearanceModel)
-        : new ImplApi14(shapeAppearanceModel);
+    return create(new CutoutDrawableState(
+        shapeAppearanceModel != null ? shapeAppearanceModel : new ShapeAppearanceModel(),
+        new RectF()));
   }
 
-  private CutoutDrawable(@Nullable ShapeAppearanceModel shapeAppearanceModel) {
-    super(shapeAppearanceModel != null ? shapeAppearanceModel : new ShapeAppearanceModel());
-    cutoutBounds = new RectF();
+  private static CutoutDrawable create(@NonNull CutoutDrawableState drawableState) {
+    return new ImplApi18(drawableState);
+  }
+
+  private CutoutDrawable(@NonNull CutoutDrawableState drawableState) {
+    super(drawableState);
+    this.drawableState = drawableState;
+  }
+
+  @NonNull
+  @Override
+  public Drawable mutate() {
+    drawableState = new CutoutDrawableState(drawableState);
+    return this;
   }
 
   boolean hasCutout() {
-    return !cutoutBounds.isEmpty();
+    return !drawableState.cutoutBounds.isEmpty();
   }
 
   void setCutout(float left, float top, float right, float bottom) {
     // Avoid expensive redraws by only calling invalidateSelf if one of the cutout's dimensions has
     // changed.
-    if (left != cutoutBounds.left
-        || top != cutoutBounds.top
-        || right != cutoutBounds.right
-        || bottom != cutoutBounds.bottom) {
-      cutoutBounds.set(left, top, right, bottom);
+    if (left != drawableState.cutoutBounds.left
+        || top != drawableState.cutoutBounds.top
+        || right != drawableState.cutoutBounds.right
+        || bottom != drawableState.cutoutBounds.bottom) {
+      drawableState.cutoutBounds.set(left, top, right, bottom);
       invalidateSelf();
     }
   }
@@ -76,23 +81,22 @@ class CutoutDrawable extends MaterialShapeDrawable {
     setCutout(0, 0, 0, 0);
   }
 
-  @TargetApi(VERSION_CODES.JELLY_BEAN_MR2)
   private static class ImplApi18 extends CutoutDrawable {
-    ImplApi18(@Nullable ShapeAppearanceModel shapeAppearanceModel) {
-      super(shapeAppearanceModel);
+    ImplApi18(@NonNull CutoutDrawableState drawableState) {
+      super(drawableState);
     }
 
     @Override
     protected void drawStrokeShape(@NonNull Canvas canvas) {
-      if (cutoutBounds.isEmpty()) {
+      if (drawableState.cutoutBounds.isEmpty()) {
         super.drawStrokeShape(canvas);
       } else {
         // Saves the canvas so we can restore the clip after drawing the stroke.
         canvas.save();
         if (VERSION.SDK_INT >= VERSION_CODES.O) {
-          canvas.clipOutRect(cutoutBounds);
+          canvas.clipOutRect(drawableState.cutoutBounds);
         } else {
-          canvas.clipRect(cutoutBounds, Op.DIFFERENCE);
+          canvas.clipRect(drawableState.cutoutBounds, Op.DIFFERENCE);
         }
         super.drawStrokeShape(canvas);
         canvas.restore();
@@ -100,72 +104,27 @@ class CutoutDrawable extends MaterialShapeDrawable {
     }
   }
 
-  // Workaround: Canvas.clipRect() had a bug before API 18 - bound.left didn't work correctly
-  //             with Region.Op.DIFFERENCE. "Paints out" the cutout area instead on lower APIs.
-  private static class ImplApi14 extends CutoutDrawable {
-    private Paint cutoutPaint;
-    private int savedLayer;
+  private static final class CutoutDrawableState extends MaterialShapeDrawableState {
+    @NonNull private final RectF cutoutBounds;
 
-    ImplApi14(@Nullable ShapeAppearanceModel shapeAppearanceModel) {
-      super(shapeAppearanceModel);
+    private CutoutDrawableState(
+        @NonNull ShapeAppearanceModel shapeAppearanceModel, @NonNull RectF cutoutBounds) {
+      super(shapeAppearanceModel, null);
+      this.cutoutBounds = cutoutBounds;
     }
 
+    private CutoutDrawableState(@NonNull CutoutDrawableState state) {
+      super(state);
+      this.cutoutBounds = state.cutoutBounds;
+    }
+
+    @NonNull
     @Override
-    public void draw(@NonNull Canvas canvas) {
-      preDraw(canvas);
-      super.draw(canvas);
-      postDraw(canvas);
-    }
-
-    @Override
-    protected void drawStrokeShape(@NonNull Canvas canvas) {
-      super.drawStrokeShape(canvas);
-      canvas.drawRect(cutoutBounds, getCutoutPaint());
-    }
-
-    private Paint getCutoutPaint() {
-      if (cutoutPaint == null) {
-        cutoutPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        cutoutPaint.setStyle(Style.FILL_AND_STROKE);
-        cutoutPaint.setColor(Color.WHITE);
-        cutoutPaint.setXfermode(new PorterDuffXfermode(Mode.DST_OUT));
-      }
-      return cutoutPaint;
-    }
-
-    private void preDraw(@NonNull Canvas canvas) {
-      Callback callback = getCallback();
-
-      if (useHardwareLayer(callback)) {
-        View viewCallback = (View) callback;
-        // Make sure we're using a hardware layer.
-        if (viewCallback.getLayerType() != View.LAYER_TYPE_HARDWARE) {
-          viewCallback.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        }
-      } else {
-        // If we're not using a hardware layer, save the canvas layer.
-        saveCanvasLayer(canvas);
-      }
-    }
-
-    private void saveCanvasLayer(@NonNull Canvas canvas) {
-      if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
-        savedLayer = canvas.saveLayer(0, 0, canvas.getWidth(), canvas.getHeight(), null);
-      } else {
-        savedLayer =
-            canvas.saveLayer(
-                0, 0, canvas.getWidth(), canvas.getHeight(), null, Canvas.ALL_SAVE_FLAG);
-      }
-    }
-
-    private void postDraw(@NonNull Canvas canvas) {
-      if (!useHardwareLayer(getCallback())) {
-        canvas.restoreToCount(savedLayer);
-      }
-    }
-
-    private boolean useHardwareLayer(Callback callback) {
-      return callback instanceof View;
+    public Drawable newDrawable() {
+      CutoutDrawable drawable = CutoutDrawable.create(this);
+      // Force the calculation of the path for the new drawable.
+      drawable.invalidateSelf();
+      return drawable;
     }
   }
 }
