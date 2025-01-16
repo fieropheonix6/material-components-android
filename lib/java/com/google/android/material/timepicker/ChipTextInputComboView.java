@@ -31,6 +31,7 @@ import android.text.InputFilter;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
+import android.view.View;
 import android.widget.Checkable;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -81,8 +82,8 @@ class ChipTextInputComboView extends FrameLayout implements Checkable {
     addView(chip);
     addView(textInputLayout);
     label = findViewById(R.id.material_label);
-    editText.setId(ViewCompat.generateViewId());
-    ViewCompat.setLabelFor(label, editText.getId());
+    editText.setId(View.generateViewId());
+    label.setLabelFor(editText.getId());
     editText.setSaveEnabled(false);
     editText.setLongClickable(false);
   }
@@ -104,9 +105,11 @@ class ChipTextInputComboView extends FrameLayout implements Checkable {
   public void setChecked(boolean checked) {
     chip.setChecked(checked);
     editText.setVisibility(checked ? VISIBLE : INVISIBLE);
+    // TODO(b/247609386) Should not hide chip, we need the background in M3 (but not M2...).
+    // Instead, the text in chip should be hidden.
     chip.setVisibility(checked ? GONE : VISIBLE);
     if (isChecked()) {
-      ViewUtils.requestFocusAndShowKeyboard(editText);
+      ViewUtils.requestFocusAndShowKeyboard(editText, /* useWindowInsetsController= */ false);
     }
   }
 

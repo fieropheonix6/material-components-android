@@ -16,10 +16,16 @@ screens, data sets, and other interactions.
 
 **Contents**
 
+*   [Design and API Documentation](#design-and-api-documentation)
 *   [Using tabs](#using-tabs)
 *   [Fixed tabs](#fixed-tabs)
 *   [Scrollable tabs](#scrollable-tabs)
 *   [Theming tabs](#theming-tabs)
+
+## Design and API Documentation
+
+*   [Google Material3 Spec](https://material.io/components/tabs/overview)
+*   [API Reference](https://developer.android.com/reference/com/google/android/material/tabs/package-summary)
 
 ## Using tabs
 
@@ -89,6 +95,15 @@ tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
 })
 ```
 
+API and source code:
+
+*   `TabLayout`
+    *   [Class definition](https://developer.android.com/reference/com/google/android/material/tabs/TabLayout)
+    *   [Class source](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/tabs/TabLayout.java)
+*   `TabItem`
+    *   [Class definition](https://developer.android.com/reference/com/google/android/material/tabs/TabItem)
+    *   [Class source](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/tabs/TabItem.java)
+
 ### Making tabs accessible
 
 The Android tab components support screen reader descriptions for tabs and
@@ -115,9 +130,14 @@ badge states:
 
 ```kt
 val badge = tab.getOrCreateBadge()
+
+// For badges with a number
 badge.setContentDescriptionNumberless(contentDescription)
 badge.setContentDescriptionQuantityStringsResource(R.string.content_description)
 badge.setContentDescriptionExceedsMaxBadgeNumberStringResource(R.string.content_description)
+
+// For badges with a text
+badge.setContentDescriptionForText(contentDescription)
 ```
 
 ### Using tabs with ViewPager
@@ -220,15 +240,6 @@ only tabs available.
 
 ### Fixed tabs example
 
-API and source code:
-
-*   `TabLayout`
-    *   [Class definition](https://developer.android.com/reference/com/google/android/material/tabs/TabLayout)
-    *   [Class source](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/tabs/TabLayout.java)
-*   `TabItem`
-    *   [Class definition](https://developer.android.com/reference/com/google/android/material/tabs/TabItem)
-    *   [Class source](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/tabs/TabItem.java)
-
 The following example shows a row of fixed tabs.
 
 ![Example of 3 fixed tabs.](assets/tabs/tabs_fixed.png)
@@ -271,15 +282,6 @@ Scrollable tabs are displayed without fixed widths. They are scrollable, such
 that some tabs will remain off-screen until scrolled.
 
 ### Scrollable tabs example
-
-API and source code:
-
-*   `TabLayout`
-    *   [Class definition](https://developer.android.com/reference/com/google/android/material/tabs/TabLayout)
-    *   [Class source](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/tabs/TabLayout.java)
-*   `TabItem`
-    *   [Class definition](https://developer.android.com/reference/com/google/android/material/tabs/TabItem)
-    *   [Class source](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/tabs/TabItem.java)
 
 The following example shows a row of scrollable tabs.
 
@@ -365,11 +367,11 @@ Element                   | Attribute                   | Related method(s)     
 ------------------------- | --------------------------- | --------------------------------------------------------------- | -------------
 **Text**                  | `android:text`              | `setText`<br>`getText`                                          | `null`
 **Color**                 | `tabTextColor`              | `setTabTextColors`<br>`getTabTextColors`                        | `colorOnSurfaceVariant` and `colorPrimary` (activated) (see all [states](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/tabs/res/color/m3_tabs_icon_color.xml))
-**Typography**            | `tabTextAppearance`         | N/A                                                             | `?attr/textAppearanceLabelLarge`
-**Active tab typography** | `selectedTabTextAppearance` | N/A                                                             | None; will use `tabTextAppearance` instead
+**Typography**            | `tabTextAppearance`         | N/A                                                             | `?attr/textAppearanceTitleSmall`
+**Active tab typography** | `tabSelectedTextAppearance` | N/A                                                             | None; will use `tabTextAppearance` instead
 **Inline label**          | `tabInlineLabel`            | `setInlineLabel`<br>`setInlineLabelResource`<br>`isInlineLabel` | `false`
 
-**Note:** When using `selectedTabTextAppearance`, you must have matching text
+**Note:** When using `tabSelectedTextAppearance`, you must have matching text
 attributes in `tabTextAppearance` to avoid unintended behavior.
 
 ### Tab item container attributes
@@ -377,7 +379,7 @@ attributes in `tabTextAppearance` to avoid unintended behavior.
 Element              | Attribute                                                                                     | Related method(s)                                                            | Default value
 -------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------
 **Ripple color**     | `tabRippleColor`                                                                              | `setTabRippleColor`<br>`setTabRippleColorResource`<br>`getTabRippleColor`    | `colorOnSurfaceVariant` at 16% opacity and `colorPrimary` at 16% opacity (activated) (see all [states](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/tabs/res/color/m3_tabs_ripple_color.xml))
-**Unbounded ripple** | `tabUnboundedRipple`                                                                          | `setUnboundedRipple`<br>`setUnboundedRippleResource`<br>`hasUnboundedRipple` | `true`
+**Unbounded ripple** | `tabUnboundedRipple`                                                                          | `setUnboundedRipple`<br>`setUnboundedRippleResource`<br>`hasUnboundedRipple` | `false`
 **Gravity**          | `tabGravity`                                                                                  | `setTabGravity`<br>`getTabGravity`                                           | `fill`
 **Min width**        | `tabMinWidth`                                                                                 | N/A                                                                          | `72dp` (scrollable) or `wrap_content`
 **Max width**        | `tabMaxWidth`                                                                                 | N/A                                                                          | `264dp`

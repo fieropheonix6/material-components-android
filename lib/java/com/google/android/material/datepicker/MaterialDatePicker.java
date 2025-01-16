@@ -38,7 +38,6 @@ import androidx.appcompat.content.res.AppCompatResources;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.View.OnClickListener;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
@@ -51,6 +50,7 @@ import androidx.annotation.RestrictTo;
 import androidx.annotation.StringRes;
 import androidx.annotation.StyleRes;
 import androidx.annotation.VisibleForTesting;
+import androidx.core.graphics.Insets;
 import androidx.core.util.Pair;
 import androidx.core.view.OnApplyWindowInsetsListener;
 import androidx.core.view.ViewCompat;
@@ -67,8 +67,15 @@ import java.lang.annotation.RetentionPolicy;
 import java.text.SimpleDateFormat;
 import java.util.LinkedHashSet;
 
-/** A {@link Dialog} with a header, {@link MaterialCalendar}, and set of actions. */
-public final class MaterialDatePicker<S> extends DialogFragment {
+/**
+ * A {@link Dialog} with a header, {@link MaterialCalendar}, and set of actions.
+ *
+ * <p>For more information, see the <a
+ * href="https://github.com/material-components/material-components-android/blob/master/docs/components/DatePicker.md">component
+ * developer guidance</a> and <a href="https://material.io/components/date-pickers/overview">design
+ * guidelines</a>.
+ */
+public class MaterialDatePicker<S> extends DialogFragment {
 
   private static final String OVERRIDE_THEME_RES_ID = "OVERRIDE_THEME_RES_ID";
   private static final String DATE_SELECTOR_KEY = "DATE_SELECTOR_KEY";
@@ -78,8 +85,16 @@ public final class MaterialDatePicker<S> extends DialogFragment {
   private static final String TITLE_TEXT_KEY = "TITLE_TEXT_KEY";
   private static final String POSITIVE_BUTTON_TEXT_RES_ID_KEY = "POSITIVE_BUTTON_TEXT_RES_ID_KEY";
   private static final String POSITIVE_BUTTON_TEXT_KEY = "POSITIVE_BUTTON_TEXT_KEY";
+  private static final String POSITIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY =
+      "POSITIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY";
+  private static final String POSITIVE_BUTTON_CONTENT_DESCRIPTION_KEY =
+      "POSITIVE_BUTTON_CONTENT_DESCRIPTION_KEY";
   private static final String NEGATIVE_BUTTON_TEXT_RES_ID_KEY = "NEGATIVE_BUTTON_TEXT_RES_ID_KEY";
   private static final String NEGATIVE_BUTTON_TEXT_KEY = "NEGATIVE_BUTTON_TEXT_KEY";
+  private static final String NEGATIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY =
+      "NEGATIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY";
+  private static final String NEGATIVE_BUTTON_CONTENT_DESCRIPTION_KEY =
+      "NEGATIVE_BUTTON_CONTENT_DESCRIPTION_KEY";
   private static final String INPUT_MODE_KEY = "INPUT_MODE_KEY";
 
   static final Object CONFIRM_BUTTON_TAG = "CONFIRM_BUTTON_TAG";
@@ -140,9 +155,12 @@ public final class MaterialDatePicker<S> extends DialogFragment {
   @InputMode private int inputMode;
   @StringRes private int positiveButtonTextResId;
   private CharSequence positiveButtonText;
+  @StringRes private int positiveButtonContentDescriptionResId;
+  private CharSequence positiveButtonContentDescription;
   @StringRes private int negativeButtonTextResId;
   private CharSequence negativeButtonText;
-
+  @StringRes private int negativeButtonContentDescriptionResId;
+  private CharSequence negativeButtonContentDescription;
   private TextView headerTitleTextView;
   private TextView headerSelectionText;
   private CheckableImageButton headerToggleButton;
@@ -166,8 +184,18 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     args.putInt(INPUT_MODE_KEY, options.inputMode);
     args.putInt(POSITIVE_BUTTON_TEXT_RES_ID_KEY, options.positiveButtonTextResId);
     args.putCharSequence(POSITIVE_BUTTON_TEXT_KEY, options.positiveButtonText);
+    args.putInt(
+        POSITIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY,
+        options.positiveButtonContentDescriptionResId);
+    args.putCharSequence(
+        POSITIVE_BUTTON_CONTENT_DESCRIPTION_KEY, options.positiveButtonContentDescription);
     args.putInt(NEGATIVE_BUTTON_TEXT_RES_ID_KEY, options.negativeButtonTextResId);
     args.putCharSequence(NEGATIVE_BUTTON_TEXT_KEY, options.negativeButtonText);
+    args.putInt(
+        NEGATIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY,
+        options.negativeButtonContentDescriptionResId);
+    args.putCharSequence(
+        NEGATIVE_BUTTON_CONTENT_DESCRIPTION_KEY, options.negativeButtonContentDescription);
     materialDatePickerDialogFragment.setArguments(args);
     return materialDatePickerDialogFragment;
   }
@@ -180,17 +208,27 @@ public final class MaterialDatePicker<S> extends DialogFragment {
 
     CalendarConstraints.Builder constraintsBuilder =
         new CalendarConstraints.Builder(calendarConstraints);
-    if (calendar.getCurrentMonth() != null) {
-      constraintsBuilder.setOpenAt(calendar.getCurrentMonth().timeInMillis);
+    Month currentMonth = calendar == null ? null : calendar.getCurrentMonth();
+    if (currentMonth != null) {
+      constraintsBuilder.setOpenAt(currentMonth.timeInMillis);
     }
     bundle.putParcelable(CALENDAR_CONSTRAINTS_KEY, constraintsBuilder.build());
     bundle.putParcelable(DAY_VIEW_DECORATOR_KEY, dayViewDecorator);
     bundle.putInt(TITLE_TEXT_RES_ID_KEY, titleTextResId);
     bundle.putCharSequence(TITLE_TEXT_KEY, titleText);
+    bundle.putInt(INPUT_MODE_KEY, inputMode);
     bundle.putInt(POSITIVE_BUTTON_TEXT_RES_ID_KEY, positiveButtonTextResId);
     bundle.putCharSequence(POSITIVE_BUTTON_TEXT_KEY, positiveButtonText);
+    bundle.putInt(
+        POSITIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY, positiveButtonContentDescriptionResId);
+    bundle.putCharSequence(
+        POSITIVE_BUTTON_CONTENT_DESCRIPTION_KEY, positiveButtonContentDescription);
     bundle.putInt(NEGATIVE_BUTTON_TEXT_RES_ID_KEY, negativeButtonTextResId);
     bundle.putCharSequence(NEGATIVE_BUTTON_TEXT_KEY, negativeButtonText);
+    bundle.putInt(
+        NEGATIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY, negativeButtonContentDescriptionResId);
+    bundle.putCharSequence(
+        NEGATIVE_BUTTON_CONTENT_DESCRIPTION_KEY, negativeButtonContentDescription);
   }
 
   @Override
@@ -206,8 +244,16 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     inputMode = activeBundle.getInt(INPUT_MODE_KEY);
     positiveButtonTextResId = activeBundle.getInt(POSITIVE_BUTTON_TEXT_RES_ID_KEY);
     positiveButtonText = activeBundle.getCharSequence(POSITIVE_BUTTON_TEXT_KEY);
+    positiveButtonContentDescriptionResId =
+        activeBundle.getInt(POSITIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY);
+    positiveButtonContentDescription =
+        activeBundle.getCharSequence(POSITIVE_BUTTON_CONTENT_DESCRIPTION_KEY);
     negativeButtonTextResId = activeBundle.getInt(NEGATIVE_BUTTON_TEXT_RES_ID_KEY);
     negativeButtonText = activeBundle.getCharSequence(NEGATIVE_BUTTON_TEXT_KEY);
+    negativeButtonContentDescriptionResId =
+        activeBundle.getInt(NEGATIVE_BUTTON_CONTENT_DESCRIPTION_RES_ID_KEY);
+    negativeButtonContentDescription =
+        activeBundle.getCharSequence(NEGATIVE_BUTTON_CONTENT_DESCRIPTION_KEY);
 
     fullTitleText =
         titleText != null ? titleText : requireContext().getResources().getText(titleTextResId);
@@ -227,18 +273,27 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     Dialog dialog = new Dialog(requireContext(), getThemeResId(requireContext()));
     Context context = dialog.getContext();
     fullscreen = isFullscreen(context);
-    int surfaceColor =
-        MaterialAttributes.resolveOrThrow(
-            context, R.attr.colorSurface, MaterialDatePicker.class.getCanonicalName());
     background =
         new MaterialShapeDrawable(
             context,
             null,
             R.attr.materialCalendarStyle,
             R.style.Widget_MaterialComponents_MaterialCalendar);
+
+    TypedArray a =
+        context.obtainStyledAttributes(
+            null,
+            R.styleable.MaterialCalendar,
+            R.attr.materialCalendarStyle,
+            R.style.Widget_MaterialComponents_MaterialCalendar);
+
+    int backgroundColor = a.getColor(R.styleable.MaterialCalendar_backgroundTint, 0);
+
+    a.recycle();
+
     background.initializeElevationOverlay(context);
-    background.setFillColor(ColorStateList.valueOf(surfaceColor));
-    background.setElevation(ViewCompat.getElevation(dialog.getWindow().getDecorView()));
+    background.setFillColor(ColorStateList.valueOf(backgroundColor));
+    background.setElevation(dialog.getWindow().getDecorView().getElevation());
     return dialog;
   }
 
@@ -267,8 +322,7 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     }
 
     headerSelectionText = root.findViewById(R.id.mtrl_picker_header_selection_text);
-    ViewCompat.setAccessibilityLiveRegion(
-        headerSelectionText, ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE);
+    headerSelectionText.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
     headerToggleButton = root.findViewById(R.id.mtrl_picker_header_toggle);
     headerTitleTextView = root.findViewById(R.id.mtrl_picker_title_text);
     initHeaderToggle(context);
@@ -285,17 +339,13 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     } else if (positiveButtonTextResId != 0) {
       confirmButton.setText(positiveButtonTextResId);
     }
-    confirmButton.setOnClickListener(
-        new View.OnClickListener() {
-          @Override
-          public void onClick(View v) {
-            for (MaterialPickerOnPositiveButtonClickListener<? super S> listener :
-                onPositiveButtonClickListeners) {
-              listener.onPositiveButtonClick(getSelection());
-            }
-            dismiss();
-          }
-        });
+    if (positiveButtonContentDescription != null) {
+      confirmButton.setContentDescription(positiveButtonContentDescription);
+    } else if (positiveButtonContentDescriptionResId != 0) {
+      confirmButton.setContentDescription(
+          getContext().getResources().getText(positiveButtonContentDescriptionResId));
+    }
+    confirmButton.setOnClickListener(this::onPositiveButtonClick);
 
     Button cancelButton = root.findViewById(R.id.cancel_button);
     cancelButton.setTag(CANCEL_BUTTON_TAG);
@@ -304,17 +354,39 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     } else if (negativeButtonTextResId != 0) {
       cancelButton.setText(negativeButtonTextResId);
     }
-    cancelButton.setOnClickListener(
-        new View.OnClickListener() {
-          @Override
-          public void onClick(View v) {
-            for (View.OnClickListener listener : onNegativeButtonClickListeners) {
-              listener.onClick(v);
-            }
-            dismiss();
-          }
-        });
+    if (negativeButtonContentDescription != null) {
+      cancelButton.setContentDescription(negativeButtonContentDescription);
+    } else if (negativeButtonContentDescriptionResId != 0) {
+      cancelButton.setContentDescription(
+          getContext().getResources().getText(negativeButtonContentDescriptionResId));
+    }
+    cancelButton.setOnClickListener(this::onNegativeButtonClick);
     return root;
+  }
+
+  /**
+   * Called when the positive button on the picker has been clicked.
+   *
+   * @param view The view that was clicked.
+   */
+  public void onPositiveButtonClick(@NonNull View view) {
+    for (MaterialPickerOnPositiveButtonClickListener<? super S> listener :
+        onPositiveButtonClickListeners) {
+      listener.onPositiveButtonClick(getSelection());
+    }
+    dismiss();
+  }
+
+  /**
+   * Called when the negative button on the picker has been clicked.
+   *
+   * @param view The view that was clicked.
+   */
+  public void onNegativeButtonClick(@NonNull View view) {
+    for (View.OnClickListener listener : onNegativeButtonClickListeners) {
+      listener.onClick(view);
+    }
+    dismiss();
   }
 
   @Override
@@ -374,30 +446,37 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     return getDateSelector().getSelection();
   }
 
+  /** Returns the current {@link InputMode}. */
+  @InputMode
+  public int getInputMode() {
+    return inputMode;
+  }
+
   private void enableEdgeToEdgeIfNeeded(Window window) {
     if (edgeToEdgeEnabled) {
       // Avoid enabling edge-to-edge multiple times.
       return;
     }
     final View headerLayout = requireView().findViewById(R.id.fullscreen_header);
-    EdgeToEdgeUtils.applyEdgeToEdge(
-        window, true, ViewUtils.getBackgroundColor(headerLayout), null);
+    EdgeToEdgeUtils.applyEdgeToEdge(window, true, ViewUtils.getBackgroundColor(headerLayout), null);
     final int originalPaddingTop = headerLayout.getPaddingTop();
+    final int originalPaddingLeft = headerLayout.getPaddingLeft();
+    final int originalPaddingRight = headerLayout.getPaddingRight();
     final int originalHeaderHeight = headerLayout.getLayoutParams().height;
     ViewCompat.setOnApplyWindowInsetsListener(
         headerLayout,
         new OnApplyWindowInsetsListener() {
           @Override
           public WindowInsetsCompat onApplyWindowInsets(View v, WindowInsetsCompat insets) {
-            int topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
+            Insets inset = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             if (originalHeaderHeight >= 0) {
-              headerLayout.getLayoutParams().height = originalHeaderHeight + topInset;
+              headerLayout.getLayoutParams().height = originalHeaderHeight + inset.top;
               headerLayout.setLayoutParams(headerLayout.getLayoutParams());
             }
             headerLayout.setPadding(
-                headerLayout.getPaddingLeft(),
-                originalPaddingTop + topInset,
-                headerLayout.getPaddingRight(),
+                originalPaddingLeft + inset.left,
+                originalPaddingTop + inset.top,
+                originalPaddingRight + inset.right,
                 headerLayout.getPaddingBottom());
             return insets;
           }
@@ -405,10 +484,10 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     edgeToEdgeEnabled = true;
   }
 
-  private void updateTitle(boolean textInputMode) {
+  private void updateTitle() {
     // Set up title text forcing single line for landscape text input mode due to space constraints.
     headerTitleTextView.setText(
-        textInputMode && isLandscape() ? singleLineTitleText : fullTitleText);
+        inputMode == INPUT_MODE_TEXT && isLandscape() ? singleLineTitleText : fullTitleText);
   }
 
   @VisibleForTesting
@@ -426,13 +505,13 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     calendar =
         MaterialCalendar.newInstance(
             getDateSelector(), themeResId, calendarConstraints, dayViewDecorator);
-    boolean textInputMode = headerToggleButton.isChecked();
+
     pickerFragment =
-        textInputMode
+        inputMode == INPUT_MODE_TEXT
             ? MaterialTextInputPicker.newInstance(
                 getDateSelector(), themeResId, calendarConstraints)
             : calendar;
-    updateTitle(textInputMode);
+    updateTitle();
     updateHeader(getHeaderText());
 
     FragmentTransaction fragmentTransaction = getChildFragmentManager().beginTransaction();
@@ -464,22 +543,20 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     ViewCompat.setAccessibilityDelegate(headerToggleButton, null);
     updateToggleContentDescription(headerToggleButton);
     headerToggleButton.setOnClickListener(
-        new OnClickListener() {
-          @Override
-          public void onClick(View v) {
-            // Update confirm button in case in progress selection has been reset
-            confirmButton.setEnabled(getDateSelector().isSelectionComplete());
+        v -> {
+          // Update confirm button in case in progress selection has been reset
+          confirmButton.setEnabled(getDateSelector().isSelectionComplete());
 
-            headerToggleButton.toggle();
-            updateToggleContentDescription(headerToggleButton);
-            startPickerFragment();
-          }
+          headerToggleButton.toggle();
+          inputMode = (inputMode == INPUT_MODE_TEXT) ? INPUT_MODE_CALENDAR : INPUT_MODE_TEXT;
+          updateToggleContentDescription(headerToggleButton);
+          startPickerFragment();
         });
   }
 
   private void updateToggleContentDescription(@NonNull CheckableImageButton toggle) {
     String contentDescription =
-        headerToggleButton.isChecked()
+        inputMode == INPUT_MODE_TEXT
             ? toggle.getContext().getString(R.string.mtrl_picker_toggle_to_calendar_input_mode)
             : toggle.getContext().getString(R.string.mtrl_picker_toggle_to_text_input_mode);
     headerToggleButton.setContentDescription(contentDescription);
@@ -641,8 +718,12 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     CharSequence titleText = null;
     int positiveButtonTextResId = 0;
     CharSequence positiveButtonText = null;
+    int positiveButtonContentDescriptionResId = 0;
+    CharSequence positiveButtonContentDescription = null;
     int negativeButtonTextResId = 0;
     CharSequence negativeButtonText = null;
+    int negativeButtonContentDescriptionResId = 0;
+    CharSequence negativeButtonContentDescription = null;
     @Nullable S selection = null;
     @InputMode int inputMode = INPUT_MODE_CALENDAR;
 
@@ -777,6 +858,34 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     }
 
     /**
+     * Sets the content description used in the positive button
+     *
+     * @param contentDescriptionId resource id to be used as content description in the positive
+     *     button
+     */
+    @NonNull
+    @CanIgnoreReturnValue
+    public Builder<S> setPositiveButtonContentDescription(@StringRes int contentDescriptionId) {
+      this.positiveButtonContentDescriptionResId = contentDescriptionId;
+      this.positiveButtonContentDescription = null;
+      return this;
+    }
+
+    /**
+     * Sets the content description used in the positive button
+     *
+     * @param contentDescription content description used in the positive button
+     */
+    @NonNull
+    @CanIgnoreReturnValue
+    public Builder<S> setPositiveButtonContentDescription(
+        @Nullable CharSequence contentDescription) {
+      this.positiveButtonContentDescription = contentDescription;
+      this.positiveButtonContentDescriptionResId = 0;
+      return this;
+    }
+
+    /**
      * Sets the text used in the negative button
      *
      * @param textId resource id to be used as text in the negative button
@@ -799,6 +908,34 @@ public final class MaterialDatePicker<S> extends DialogFragment {
     public Builder<S> setNegativeButtonText(@Nullable CharSequence text) {
       this.negativeButtonText = text;
       this.negativeButtonTextResId = 0;
+      return this;
+    }
+
+    /**
+     * Sets the content description used in the negative button
+     *
+     * @param contentDescriptionId resource id to be used as content description in the negative
+     *     button
+     */
+    @NonNull
+    @CanIgnoreReturnValue
+    public Builder<S> setNegativeButtonContentDescription(@StringRes int contentDescriptionId) {
+      this.negativeButtonContentDescriptionResId = contentDescriptionId;
+      this.negativeButtonContentDescription = null;
+      return this;
+    }
+
+    /**
+     * Sets the content description used in the negative button
+     *
+     * @param contentDescription content description used in the negative button
+     */
+    @NonNull
+    @CanIgnoreReturnValue
+    public Builder<S> setNegativeButtonContentDescription(
+        @Nullable CharSequence contentDescription) {
+      this.negativeButtonContentDescription = contentDescription;
+      this.negativeButtonContentDescriptionResId = 0;
       return this;
     }
 
@@ -843,7 +980,8 @@ public final class MaterialDatePicker<S> extends DialogFragment {
 
       Month thisMonth = Month.current();
       return monthInValidRange(thisMonth, calendarConstraints)
-          ? thisMonth : calendarConstraints.getStart();
+          ? thisMonth
+          : calendarConstraints.getStart();
     }
 
     private static boolean monthInValidRange(Month month, CalendarConstraints constraints) {

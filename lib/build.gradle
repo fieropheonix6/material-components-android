@@ -6,6 +6,7 @@ apply plugin: 'maven-publish'
 version = mdcLibraryVersion
 
 dependencies {
+  api compatibility("activity")
   api compatibility("annotation")
   api compatibility("appcompat")
   api compatibility("cardview")
@@ -18,9 +19,16 @@ dependencies {
   api compatibility("fragment")
   api compatibility("lifecycleRuntime")
   api compatibility("recyclerview")
+  api compatibility("resourceInspectionAnnotation")
   api compatibility("transition")
   api compatibility("vectordrawable")
   api compatibility("viewpager2")
+  api compatibility("graphicsShapes")
+
+  annotationProcessor compatibility("resourceInspectionProcessor")
+
+  // Align kotlin versions
+  implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.22"))
 
   implementation "com.google.errorprone:error_prone_annotations:${errorproneVersion}"
 
@@ -30,8 +38,6 @@ dependencies {
   testImplementation "com.google.truth:truth:${truthVersion}"
   testImplementation "org.mockito:mockito-core:${mockitoCoreVersion}"
   testImplementation "org.robolectric:robolectric:${robolectricVersion}"
-
-  testAnnotationProcessor "com.google.auto.service:auto-service:1.0-rc4"
 }
 
 def srcDirs = [
@@ -45,6 +51,7 @@ def srcDirs = [
   'com/google/android/material/button',
   'com/google/android/material/canvas',
   'com/google/android/material/card',
+  'com/google/android/material/carousel',
   'com/google/android/material/checkbox',
   'com/google/android/material/chip',
   'com/google/android/material/circularreveal',
@@ -58,8 +65,10 @@ def srcDirs = [
   'com/google/android/material/elevation',
   'com/google/android/material/expandable',
   'com/google/android/material/floatingactionbutton',
+  'com/google/android/material/floatingtoolbar',
   'com/google/android/material/imageview',
   'com/google/android/material/internal',
+  'com/google/android/material/loadingindicator',
   'com/google/android/material/materialswitch',
   'com/google/android/material/math',
   'com/google/android/material/menu',
@@ -70,6 +79,7 @@ def srcDirs = [
   'com/google/android/material/radiobutton',
   'com/google/android/material/resources',
   'com/google/android/material/ripple',
+  'com/google/android/material/search',
   'com/google/android/material/shape',
   'com/google/android/material/shadow',
   'com/google/android/material/sidesheet',
@@ -113,7 +123,7 @@ android {
   }
 
   defaultConfig {
-    minSdkVersion 14
+    minSdkVersion 21
   }
 }
 
@@ -131,6 +141,7 @@ task generateJavadocs(type: Javadoc) {
   if (project.hasProperty("docletPathRoot")) {
     def docletPathRoot = project.property("docletPathRoot")
     def outputPath = project.hasProperty("outputPath") ? project.property("outputPath") : "doclava-out"
+    def doclavaJar = project.getProperty("doclavaJar")
 
     source = android.sourceSets.main.java.source
     source = source.findAll { it.name.endsWith(".java") }
@@ -142,7 +153,7 @@ task generateJavadocs(type: Javadoc) {
     options.encoding = "UTF-8"
     options.doclet = "com.google.doclava.Doclava"
     options.docletpath = [
-      file(docletPathRoot + "/doclava/current/doclava.jar"),
+      file(doclavaJar),
       file(docletPathRoot + "/jsilver/v1_0_0/jsilver.jar")
     ]
   }
@@ -271,7 +282,7 @@ afterEvaluate {
           description = 'Material Components for Android is a static library ' +
             'that you can add to your Android application in order to use ' +
             'APIs that provide implementations of the Material Design specification. ' +
-            'Compatible on devices running API 14 or later.'
+            'Compatible on devices running API 21 or later.'
           url = 'https://github.com/material-components/material-components-android'
           inceptionYear = '2015'
           licenses {

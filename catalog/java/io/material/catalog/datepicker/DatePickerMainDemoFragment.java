@@ -68,7 +68,7 @@ public class DatePickerMainDemoFragment extends DemoFragment {
     today = MaterialDatePicker.todayInUtcMilliseconds();
     Calendar calendar = getClearedUtc();
     calendar.setTimeInMillis(today);
-    calendar.roll(Calendar.MONTH, 1);
+    calendar.add(Calendar.MONTH, 1);
     nextMonth = calendar.getTimeInMillis();
 
     calendar.setTimeInMillis(today);
@@ -79,7 +79,7 @@ public class DatePickerMainDemoFragment extends DemoFragment {
     decThisYear = calendar.getTimeInMillis();
 
     calendar.setTimeInMillis(today);
-    calendar.roll(Calendar.YEAR, 1);
+    calendar.add(Calendar.YEAR, 1);
     oneYearForward = calendar.getTimeInMillis();
 
     todayPair = new Pair<>(today, today);
@@ -147,10 +147,14 @@ public class DatePickerMainDemoFragment extends DemoFragment {
 
           if (positiveButtonChoice == R.id.cat_picker_positive_button_custom) {
             builder.setPositiveButtonText(R.string.cat_picker_positive_button_text);
+            builder.setPositiveButtonContentDescription(
+                R.string.cat_picker_positive_button_content_description);
           }
 
           if (negativeButtonChoice == R.id.cat_picker_negative_button_custom) {
             builder.setNegativeButtonText(R.string.cat_picker_negative_button_text);
+            builder.setNegativeButtonContentDescription(
+                R.string.cat_picker_negative_button_content_description);
           }
 
           setupDayViewDecorator(builder, dayViewDecoratorChoice);

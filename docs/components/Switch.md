@@ -21,13 +21,19 @@ as "Wi-fi" and "Bluetooth"](assets/switch/switch_hero.png)
 
 **Contents**
 
+*   [Design and API Documentation](#design-and-api-documentation)
 *   [Using switches](#using-switches)
 *   [Switch](#switch)
 *   [Theming switches](#theming-switches)
 
+## Design and API Documentation
+
+*   [Google Material3 Spec](https://material.io/components/switch/overview)
+*   [API Reference](https://developer.android.com/reference/com/google/android/material/switchmaterial/package-summary)
+
 ## Using switches
 
-Before you can use Material switches, you need to add a dependency to the
+Before you can use Material switches, you need to add a dependency on the
 Material Components for Android library. For more information, go to the
 [Getting started](https://github.com/material-components/material-components-android/tree/master/docs/getting-started.md)
 page.
@@ -57,10 +63,16 @@ often used on mobile devices to enable and disable options in an options menu. A
 switch consists of a track and thumb; the thumb moves along the track to
 indicate its current state.
 
+API and source code:
+
+*   `MaterialSwitch`
+    *   [Class definition](https://developer.android.com/reference/com/google/android/material/materialswitch/MaterialSwitch)
+    *   [Class source](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/materialswitch/MaterialSwitch.java)
+
 **Note:** Since version 1.7.0, the new `MaterialSwitch` class will replace the
 obsolete `SwitchMaterial` class. In most cases you should be able to just
-replace all `SwitchMaterial` class reference with `MaterialSwitch` to enjoy the
-default look and feel. Please refer to the following sections if you need to
+replace all `SwitchMaterial` class reference with `MaterialSwitch` to achieve
+the default look and feel. Please refer to the following sections if you need to
 customize the new styles.
 
 **Note:** For the old `SwitchMaterial` documentation, please refer to
@@ -68,12 +80,6 @@ customize the new styles.
 [Theming switches (deprecated)](#theming-switches-deprecated).
 
 ### Switches example
-
-API and source code:
-
-*   `MaterialSwitch`
-    *   [Class definition](https://developer.android.com/reference/com/google/android/material/materialswitch/MaterialSwitch)
-    *   [Class source](https://github.com/material-components/material-components-android/tree/master/lib/java/com/google/android/material/materialswitch/MaterialSwitch.java)
 
 The following example shows a list of five switches.
 
@@ -125,8 +131,8 @@ track:
 
 ![Switch anatomy diagram](assets/switch/switch_anatomy.png)
 
-1.  Thumb
-2.  Track
+1.  Track
+2.  Thumb
 3.  Icon (optional)
 
 ### Switch attributes
@@ -144,21 +150,22 @@ Element   | Attribute       | Related method(s)                         | Defaul
 
 ### Icon attributes
 
+You can add an optional icon to enhance the on/off indication of your custom
+switch by assigning `app:thumbIcon`. This icon will be centered and displayed on
+top of the thumb drawable.
+
 Element   | Attribute           | Related method(s)                                 | Default value
 --------- | ------------------- | ------------------------------------------------- | -------------
 **Icon**  | `app:thumbIcon`     | `setThumbIconDrawable`<br/>`getThumbIconDrawable` | `null`
-**Color** | `app:thumbIconTint` | `setThumbIconTintList`<br/>`getThumbIconTintList` | `?attr/colorSurfaceVariant` (unchecked)<br/>`?attr/colorOnPrimaryContainer` (checked)
-
-You can add an optional icon to enhance the on/off indication of your custom
-switch by assiging `app:thumbIcon`. This icon will be centered and displayed on
-top of the thumb drawable.
+**Size**  | `app:thumbIconSize` | `setThumbIconSize`<br/>`getThumbIconSize`         | `16dp`
+**Color** | `app:thumbIconTint` | `setThumbIconTintList`<br/>`getThumbIconTintList` | `?attr/colorSurfaceContainerHighest` (unchecked)<br/>`?attr/colorOnPrimaryContainer` (checked)
 
 ### Track attributes
 
 Element              | Attribute                 | Related method(s)                                             | Default value
 -------------------- | ------------------------- | ------------------------------------------------------------- | -------------
 **Track**            | `app:track`               | `setTrackDrawable`<br/>`getTrackDrawable`                     | `@drawable/mtrl_switch_track`
-**Color**            | `app:trackTint`           | `setTrackTintList`<br/>`getTrackTintList`                     | `?attr/colorSurfaceVariant` (unchecked)<br/>`?attr/colorPrimary` (checked)
+**Color**            | `app:trackTint`           | `setTrackTintList`<br/>`getTrackTintList`                     | `?attr/colorSurfaceContainerHighest` (unchecked)<br/>`?attr/colorPrimary` (checked)
 **Decoration**       | `app:trackDecoration`     | `setTrackDecorationDrawable`<br/>`getTrackDecorationDrawable` | `@drawable/mtrl_switch_track_decoration`<br/>(Shows an outline of the track.)
 **Decoration color** | `app:trackDecorationTint` | `setTrackDecorationTintList`<br/>`getTrackDecorationTintList` | `?attr/colorOutline` (unchecked)<br/>`@android:color/transparent` (checked)
 

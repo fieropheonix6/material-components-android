@@ -20,6 +20,7 @@ import static androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP;
 
 import androidx.annotation.IntDef;
 import androidx.annotation.RestrictTo;
+import com.google.android.material.motion.MaterialBackHandler;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
@@ -27,8 +28,7 @@ import java.lang.annotation.RetentionPolicy;
  * Interface for sheet constants and {@code IntDefs} to be shared between the different {@link
  * Sheet} implementations.
  */
-public interface Sheet {
-
+interface Sheet<C extends SheetCallback> extends MaterialBackHandler {
   /** The sheet is dragging. */
   int STATE_DRAGGING = 1;
 
@@ -67,11 +67,24 @@ public interface Sheet {
   @Retention(RetentionPolicy.SOURCE)
   @interface StableSheetState {}
 
-  /** The sheet is based on the right edge; it slides from the right edge towards the left. */
-  int RIGHT = 0;
+  /**
+   * The sheet is based on the right edge of the screen; it slides from the right edge towards the
+   * left.
+   */
+  int EDGE_RIGHT = 0;
+  /**
+   * The sheet is based on the left edge of the screen; it slides from the left edge towards the
+   * right.
+   */
+  int EDGE_LEFT = 1;
 
-  /** The edge of the screen that a sheet slides out of. */
-  @IntDef({RIGHT})
+  /**
+   * The edge of the screen that a sheet slides out of.
+   *
+   * @hide
+   */
+  @RestrictTo(LIBRARY_GROUP)
+  @IntDef({EDGE_RIGHT, EDGE_LEFT})
   @Retention(RetentionPolicy.SOURCE)
   @interface SheetEdge {}
 
@@ -85,4 +98,18 @@ public interface Sheet {
 
   /** Sets the current state of the sheet. Must be one of {@link StableSheetState}. */
   void setState(@StableSheetState int state);
+
+  /**
+   * Adds a callback to be notified of sheet events.
+   *
+   * @param callback The callback to notify when sheet events occur.
+   */
+  void addCallback(C callback);
+
+  /**
+   * Removes a callback to be notified of sheet events.
+   *
+   * @param callback The callback to remove
+   */
+  void removeCallback(C callback);
 }

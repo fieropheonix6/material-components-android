@@ -21,6 +21,9 @@ import com.google.android.material.R;
 import static androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP;
 import static java.lang.Math.min;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator.AnimatorUpdateListener;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
@@ -30,6 +33,7 @@ import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.AttributeSet;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
@@ -38,7 +42,9 @@ import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.ViewGroup.MarginLayoutParams;
 import android.view.ViewParent;
-import android.view.accessibility.AccessibilityEvent;
+import androidx.activity.BackEventCompat;
+import androidx.annotation.GravityInt;
+import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RestrictTo;
@@ -52,19 +58,29 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.Accessibilit
 import androidx.core.view.accessibility.AccessibilityViewCommand;
 import androidx.customview.view.AbsSavedState;
 import androidx.customview.widget.ViewDragHelper;
+import com.google.android.material.animation.AnimationUtils;
+import com.google.android.material.motion.MaterialSideContainerBackHelper;
 import com.google.android.material.resources.MaterialResources;
 import com.google.android.material.shape.MaterialShapeDrawable;
 import com.google.android.material.shape.ShapeAppearanceModel;
 import java.lang.ref.WeakReference;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * An interaction behavior plugin for a child view of {@link CoordinatorLayout} to make it work as a
  * side sheet.
+ *
+ * <p>For more information, see the <a
+ * href="https://github.com/material-components/material-components-android/blob/master/docs/components/SideSheet.md">component
+ * developer guidance</a> and <a href="https://material.io/components/side-sheets/overview">design
+ * guidelines</a>.
  */
-public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.Behavior<V>
-    implements Sheet {
+public class SideSheetBehavior<V extends View> extends CoordinatorLayout.Behavior<V>
+    implements Sheet<SideSheetCallback> {
+
+  private static final int DEFAULT_ACCESSIBILITY_PANE_TITLE =
+      R.string.side_sheet_accessibility_pane_title;
 
   private SheetDelegate sheetDelegate;
 
@@ -75,8 +91,6 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
   private static final float HIDE_FRICTION = 0.1f;
 
   private static final int NO_MAX_SIZE = -1;
-
-  private static final boolean UPDATE_IMPORTANT_FOR_ACCESSIBILITY_ON_SIBLINGS = false;
 
   private float maximumVelocity;
 
@@ -103,29 +117,23 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
 
   private boolean ignoreEvents;
 
-  private int lastNestedScrollDx;
-
-  private boolean nestedScrolled;
-
   private float hideFriction = HIDE_FRICTION;
 
   private int childWidth;
   private int parentWidth;
+  private int parentInnerEdge;
+  private int innerMargin;
 
   @Nullable private WeakReference<V> viewRef;
-
-  @Nullable private WeakReference<View> nestedScrollingChildRef;
+  @Nullable private WeakReference<View> coplanarSiblingViewRef;
+  @IdRes private int coplanarSiblingViewId = View.NO_ID;
 
   @Nullable private VelocityTracker velocityTracker;
-
-  private int activePointerId;
+  @Nullable private MaterialSideContainerBackHelper sideContainerBackHelper;
 
   private int initialX;
-  private int initialY;
 
-  private boolean touchingScrollingChild;
-
-  @Nullable private Map<View, Integer> importantForAccessibilityMap;
+  @NonNull private final Set<SideSheetCallback> callbacks = new LinkedHashSet<>();
 
   public SideSheetBehavior() {}
 
@@ -142,6 +150,10 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
       this.shapeAppearanceModel =
           ShapeAppearanceModel.builder(context, attrs, 0, DEF_STYLE_RES).build();
     }
+    if (a.hasValue(R.styleable.SideSheetBehavior_Layout_coplanarSiblingViewId)) {
+      setCoplanarSiblingViewId(
+          a.getResourceId(R.styleable.SideSheetBehavior_Layout_coplanarSiblingViewId, View.NO_ID));
+    }
     createMaterialShapeDrawableIfNeeded(context);
 
     this.elevation = a.getDimension(R.styleable.SideSheetBehavior_Layout_android_elevation, -1);
@@ -150,27 +162,83 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
 
     a.recycle();
 
-    setSheetEdge(getDefaultSheetEdge());
     ViewConfiguration configuration = ViewConfiguration.get(context);
     maximumVelocity = configuration.getScaledMaximumFlingVelocity();
   }
 
+  private void setSheetEdge(@NonNull V view, int layoutDirection) {
+    LayoutParams params = (LayoutParams) view.getLayoutParams();
+    int sheetGravity = Gravity.getAbsoluteGravity(params.gravity, layoutDirection);
+
+    setSheetEdge(sheetGravity == Gravity.LEFT ? EDGE_LEFT : EDGE_RIGHT);
+  }
+
   private void setSheetEdge(@SheetEdge int sheetEdge) {
     if (sheetDelegate == null || sheetDelegate.getSheetEdge() != sheetEdge) {
-
-      if (sheetEdge == RIGHT) {
+      if (sheetEdge == EDGE_RIGHT) {
         this.sheetDelegate = new RightSheetDelegate(this);
+        if (shapeAppearanceModel != null && !hasRightMargin()) {
+          ShapeAppearanceModel.Builder builder = shapeAppearanceModel.toBuilder();
+          builder.setTopRightCornerSize(0).setBottomRightCornerSize(0);
+          updateMaterialShapeDrawable(builder.build());
+        }
+        return;
+      }
+
+      if (sheetEdge == EDGE_LEFT) {
+        this.sheetDelegate = new LeftSheetDelegate(this);
+        if (shapeAppearanceModel != null && !hasLeftMargin()) {
+          ShapeAppearanceModel.Builder builder = shapeAppearanceModel.toBuilder();
+          builder.setTopLeftCornerSize(0).setBottomLeftCornerSize(0);
+          updateMaterialShapeDrawable(builder.build());
+        }
         return;
       }
 
       throw new IllegalArgumentException(
-          "Invalid sheet edge position value: " + sheetEdge + ". Must be " + RIGHT);
+          "Invalid sheet edge position value: "
+              + sheetEdge
+              + ". Must be "
+              + EDGE_RIGHT
+              + " or "
+              + EDGE_LEFT
+              + ".");
     }
   }
 
-  @SheetEdge
-  private int getDefaultSheetEdge() {
-    return RIGHT;
+  @GravityInt
+  private int getGravityFromSheetEdge() {
+    if (sheetDelegate != null) {
+      return sheetDelegate.getSheetEdge() == Sheet.EDGE_RIGHT ? Gravity.RIGHT : Gravity.LEFT;
+    }
+    return Gravity.RIGHT;
+  }
+
+  private boolean hasRightMargin() {
+    LayoutParams layoutParams = getViewLayoutParams();
+    return layoutParams != null && layoutParams.rightMargin > 0;
+  }
+
+  private boolean hasLeftMargin() {
+    LayoutParams layoutParams = getViewLayoutParams();
+    return layoutParams != null && layoutParams.leftMargin > 0;
+  }
+
+  @Nullable
+  private LayoutParams getViewLayoutParams() {
+    if (viewRef != null) {
+      View view = viewRef.get();
+      if (view != null && view.getLayoutParams() instanceof CoordinatorLayout.LayoutParams) {
+        return (LayoutParams) view.getLayoutParams();
+      }
+    }
+    return null;
+  }
+
+  private void updateMaterialShapeDrawable(@NonNull ShapeAppearanceModel shapeAppearanceModel) {
+    if (materialShapeDrawable != null) {
+      materialShapeDrawable.setShapeAppearanceModel(shapeAppearanceModel);
+    }
   }
 
   /**
@@ -214,6 +282,7 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
     // first time we layout with this behavior by checking (viewRef == null).
     viewRef = null;
     viewDragHelper = null;
+    sideContainerBackHelper = null;
   }
 
   @Override
@@ -222,6 +291,7 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
     // Release references so we don't run unnecessary codepaths while not attached to a view.
     viewRef = null;
     viewDragHelper = null;
+    sideContainerBackHelper = null;
   }
 
   @Override
@@ -280,46 +350,89 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
   @Override
   public boolean onLayoutChild(
       @NonNull CoordinatorLayout parent, @NonNull final V child, int layoutDirection) {
-    if (ViewCompat.getFitsSystemWindows(parent) && !ViewCompat.getFitsSystemWindows(child)) {
+    if (parent.getFitsSystemWindows() && !child.getFitsSystemWindows()) {
       child.setFitsSystemWindows(true);
     }
 
     if (viewRef == null) {
       // First layout with this behavior.
       viewRef = new WeakReference<>(child);
+
+      sideContainerBackHelper = new MaterialSideContainerBackHelper(child);
+
       // Only set MaterialShapeDrawable as background if shapeTheming is enabled, otherwise will
       // default to android:background declared in styles or layout.
       if (materialShapeDrawable != null) {
-        ViewCompat.setBackground(child, materialShapeDrawable);
+        child.setBackground(materialShapeDrawable);
         // Use elevation attr if set on side sheet; otherwise, use elevation of child view.
-        materialShapeDrawable.setElevation(
-            elevation == -1 ? ViewCompat.getElevation(child) : elevation);
+        materialShapeDrawable.setElevation(elevation == -1 ? child.getElevation() : elevation);
       } else if (backgroundTint != null) {
         ViewCompat.setBackgroundTintList(child, backgroundTint);
       }
+      updateSheetVisibility(child);
+
       updateAccessibilityActions();
-      if (ViewCompat.getImportantForAccessibility(child)
-          == ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_AUTO) {
-        ViewCompat.setImportantForAccessibility(child, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_YES);
+      if (child.getImportantForAccessibility() == View.IMPORTANT_FOR_ACCESSIBILITY_AUTO) {
+        child.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
       }
+      ensureAccessibilityPaneTitleIsSet(child);
     }
+    setSheetEdge(child, layoutDirection);
+
     if (viewDragHelper == null) {
       viewDragHelper = ViewDragHelper.create(parent, dragCallback);
     }
 
-    int savedOutwardEdge = sheetDelegate.getOutwardEdge(child);
+    int savedOuterEdge = sheetDelegate.getOuterEdge(child);
     // First let the parent lay it out.
     parent.onLayoutChild(child, layoutDirection);
     // Offset the sheet.
     parentWidth = parent.getWidth();
+    parentInnerEdge = sheetDelegate.getParentInnerEdge(parent);
     childWidth = child.getWidth();
 
-    int currentOffset = calculateCurrentOffset(savedOutwardEdge, child);
+    MarginLayoutParams margins = (MarginLayoutParams) child.getLayoutParams();
+    innerMargin = margins != null ? sheetDelegate.calculateInnerMargin(margins) : 0;
+
+    int currentOffset = calculateCurrentOffset(savedOuterEdge, child);
 
     ViewCompat.offsetLeftAndRight(child, currentOffset);
 
-    nestedScrollingChildRef = new WeakReference<>(findScrollingChild(child));
+    maybeAssignCoplanarSiblingViewBasedId(parent);
+
+    for (SheetCallback callback : callbacks) {
+      if (callback instanceof SideSheetCallback) {
+        SideSheetCallback sideSheetCallback = (SideSheetCallback) callback;
+        sideSheetCallback.onLayout(child);
+      }
+    }
     return true;
+  }
+
+  private void updateSheetVisibility(@NonNull View sheet) {
+    // Sheet visibility is updated on state change to make TalkBack speak the accessibility pane
+    // title when the sheet expands.
+    int visibility = state == STATE_HIDDEN ? View.INVISIBLE : View.VISIBLE;
+    if (sheet.getVisibility() != visibility) {
+      sheet.setVisibility(visibility);
+    }
+  }
+
+  private void ensureAccessibilityPaneTitleIsSet(View sheet) {
+    // Set default accessibility pane title that TalkBack will speak when the sheet is expanded.
+    if (ViewCompat.getAccessibilityPaneTitle(sheet) == null) {
+      ViewCompat.setAccessibilityPaneTitle(
+          sheet, sheet.getResources().getString(DEFAULT_ACCESSIBILITY_PANE_TITLE));
+    }
+  }
+
+  private void maybeAssignCoplanarSiblingViewBasedId(@NonNull CoordinatorLayout parent) {
+    if (coplanarSiblingViewRef == null && coplanarSiblingViewId != View.NO_ID) {
+      View coplanarSiblingView = parent.findViewById(coplanarSiblingViewId);
+      if (coplanarSiblingView != null) {
+        this.coplanarSiblingViewRef = new WeakReference<>(coplanarSiblingView);
+      }
+    }
   }
 
   int getChildWidth() {
@@ -330,16 +443,24 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
     return parentWidth;
   }
 
-  private int calculateCurrentOffset(int savedOutwardEdge, V child) {
+  int getParentInnerEdge() {
+    return parentInnerEdge;
+  }
+
+  int getInnerMargin() {
+    return innerMargin;
+  }
+
+  private int calculateCurrentOffset(int savedOuterEdge, V child) {
     int currentOffset;
 
     switch (state) {
       case STATE_EXPANDED:
-        currentOffset = savedOutwardEdge;
+        currentOffset = 0;
         break;
       case STATE_DRAGGING:
       case STATE_SETTLING:
-        currentOffset = savedOutwardEdge - sheetDelegate.getOutwardEdge(child);
+        currentOffset = savedOuterEdge - sheetDelegate.getOuterEdge(child);
         break;
       case STATE_HIDDEN:
         currentOffset = sheetDelegate.getHiddenOffset();
@@ -353,7 +474,7 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
   @Override
   public boolean onInterceptTouchEvent(
       @NonNull CoordinatorLayout parent, @NonNull V child, @NonNull MotionEvent event) {
-    if (!child.isShown() || !draggable) {
+    if (!shouldInterceptTouchEvent(child)) {
       ignoreEvents = true;
       return false;
     }
@@ -369,8 +490,6 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
     switch (action) {
       case MotionEvent.ACTION_UP:
       case MotionEvent.ACTION_CANCEL:
-        touchingScrollingChild = false;
-        activePointerId = MotionEvent.INVALID_POINTER_ID;
         // Reset the ignore flag
         if (ignoreEvents) {
           ignoreEvents = false;
@@ -379,40 +498,16 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
         break;
       case MotionEvent.ACTION_DOWN:
         initialX = (int) event.getX();
-        initialY = (int) event.getY();
-        // Only intercept nested scrolling events here if the view is not being moved by the
-        // ViewDragHelper.
-        if (state != STATE_SETTLING) {
-          View nestedScrollChild =
-              nestedScrollingChildRef != null ? nestedScrollingChildRef.get() : null;
-          if (nestedScrollChild != null
-              && parent.isPointInChildBounds(nestedScrollChild, initialX, initialY)) {
-            activePointerId = event.getPointerId(event.getActionIndex());
-            touchingScrollingChild = true;
-          }
-        }
-        ignoreEvents =
-            activePointerId == MotionEvent.INVALID_POINTER_ID
-                && !parent.isPointInChildBounds(child, initialX, initialY);
         break;
       default: // fall out
     }
-    if (!ignoreEvents
+    return !ignoreEvents
         && viewDragHelper != null
-        && viewDragHelper.shouldInterceptTouchEvent(event)) {
-      return true;
-    }
-    // We have to handle cases where the ViewDragHelper does not capture the sheet because
-    // it is not the top most view of its parent. This is not necessary when the touch event is
-    // happening over the scrolling content as nested scrolling logic handles that case.
-    View scroll = nestedScrollingChildRef != null ? nestedScrollingChildRef.get() : null;
-    return action == MotionEvent.ACTION_MOVE
-        && scroll != null
-        && !ignoreEvents
-        && state != STATE_DRAGGING
-        && !parent.isPointInChildBounds(scroll, (int) event.getX(), (int) event.getY())
-        && viewDragHelper != null
-        && calculateDragDistance(initialY, event.getY()) > viewDragHelper.getTouchSlop();
+        && viewDragHelper.shouldInterceptTouchEvent(event);
+  }
+
+  private boolean shouldInterceptTouchEvent(@NonNull V child) {
+    return (child.isShown() || ViewCompat.getAccessibilityPaneTitle(child) != null) && draggable;
   }
 
   int getSignificantVelocityThreshold() {
@@ -462,100 +557,8 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
     return Math.abs(initialPoint - currentPoint);
   }
 
-  @Override
-  public boolean onStartNestedScroll(
-      @NonNull CoordinatorLayout coordinatorLayout,
-      @NonNull V child,
-      @NonNull View directTargetChild,
-      @NonNull View target,
-      int axes,
-      int type) {
-    lastNestedScrollDx = 0;
-    nestedScrolled = false;
-    return (axes & ViewCompat.SCROLL_AXIS_HORIZONTAL) != 0;
-  }
-
-  @Override
-  public void onNestedPreScroll(
-      @NonNull CoordinatorLayout coordinatorLayout,
-      @NonNull V child,
-      @NonNull View target,
-      int dx,
-      int dy,
-      @NonNull int[] consumed,
-      int type) {
-    if (type == ViewCompat.TYPE_NON_TOUCH) {
-      // Ignore fling here. The ViewDragHelper handles it.
-      return;
-    }
-    View scrollingChild = nestedScrollingChildRef != null ? nestedScrollingChildRef.get() : null;
-    if (isNestedScrollingCheckEnabled() && target != scrollingChild) {
-      return;
-    }
-    sheetDelegate.setTargetStateOnNestedPreScroll(
-        coordinatorLayout, child, target, dx, dy, consumed, type);
-    lastNestedScrollDx = dx;
-    nestedScrolled = true;
-  }
-
-  @Override
-  public void onStopNestedScroll(
-      @NonNull CoordinatorLayout coordinatorLayout,
-      @NonNull V child,
-      @NonNull View target,
-      int type) {
-    if (sheetDelegate.hasReachedExpandedOffset(child)) {
-      setStateInternal(STATE_EXPANDED);
-      return;
-    }
-    if (isNestedScrollingCheckEnabled()
-        && (nestedScrollingChildRef == null
-            || target != nestedScrollingChildRef.get()
-            || !nestedScrolled)) {
-      return;
-    }
-    @StableSheetState int targetState = sheetDelegate.calculateTargetStateOnStopNestedScroll(child);
-    startSettling(child, targetState, false);
-    nestedScrolled = false;
-  }
-
-  @Override
-  public void onNestedScroll(
-      @NonNull CoordinatorLayout coordinatorLayout,
-      @NonNull V child,
-      @NonNull View target,
-      int dxConsumed,
-      int dyConsumed,
-      int dxUnconsumed,
-      int dyUnconsumed,
-      int type,
-      @NonNull int[] consumed) {
-    // Overridden to prevent the default consumption of the entire scroll distance.
-  }
-
-  @Override
-  public boolean onNestedPreFling(
-      @NonNull CoordinatorLayout coordinatorLayout,
-      @NonNull V child,
-      @NonNull View target,
-      float velocityX,
-      float velocityY) {
-
-    if (nestedScrollingChildRef == null || !isNestedScrollingCheckEnabled()) {
-      return false;
-    }
-
-    return target == nestedScrollingChildRef.get()
-        && (state != STATE_EXPANDED
-            || super.onNestedPreFling(coordinatorLayout, child, target, velocityX, velocityY));
-  }
-
-  int getLastNestedScrollDx() {
-    return lastNestedScrollDx;
-  }
-
   /**
-   * Returns the sheet's offset from the origin edge when expanded. It will calculate the offset
+   * Returns the sheet's offset from the inner edge when expanded. It will calculate the offset
    * based on the width of the content.
    */
   public int getExpandedOffset() {
@@ -602,6 +605,26 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
   }
 
   /**
+   * Adds a callback to be notified of side sheet events.
+   *
+   * @param callback The callback to notify when side sheet events occur.
+   */
+  @Override
+  public void addCallback(@NonNull SideSheetCallback callback) {
+    callbacks.add(callback);
+  }
+
+  /**
+   * Removes a previously added callback.
+   *
+   * @param callback The callback to remove.
+   */
+  @Override
+  public void removeCallback(@NonNull SideSheetCallback callback) {
+    callbacks.remove(callback);
+  }
+
+  /**
    * Sets the state of the sheet. The sheet will transition to that state with animation.
    *
    * @param state One of {@link #STATE_EXPANDED} or {@link #STATE_HIDDEN}.
@@ -640,13 +663,14 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
 
   private boolean isLayingOut(@NonNull V child) {
     ViewParent parent = child.getParent();
-    return parent != null && parent.isLayoutRequested() && ViewCompat.isAttachedToWindow(child);
+    return parent != null && parent.isLayoutRequested() && child.isAttachedToWindow();
   }
 
   /**
    * Gets the current state of the sheet.
    *
-   * @return One of {@link #STATE_EXPANDED}, {@link #STATE_DRAGGING}, or {@link #STATE_SETTLING}.
+   * @return One of {@link #STATE_EXPANDED}, {@link #STATE_DRAGGING}, {@link #STATE_SETTLING}, or
+   *     {@link #STATE_HIDDEN}.
    */
   @SheetState
   @Override
@@ -672,17 +696,16 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
       return;
     }
 
-    if (state == STATE_EXPANDED) {
-      updateImportantForAccessibility(true);
-    } else if (state == STATE_HIDDEN) {
-      updateImportantForAccessibility(false);
+    updateSheetVisibility(sheet);
+
+    for (SheetCallback callback : callbacks) {
+      callback.onStateChanged(sheet, state);
     }
 
     updateAccessibilityActions();
   }
 
   private void resetVelocity() {
-    activePointerId = ViewDragHelper.INVALID_POINTER;
     if (velocityTracker != null) {
       velocityTracker.recycle();
       velocityTracker = null;
@@ -691,27 +714,6 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
 
   boolean shouldHide(@NonNull View child, float velocity) {
     return sheetDelegate.shouldHide(child, velocity);
-  }
-
-  @Nullable
-  @VisibleForTesting
-  View findScrollingChild(View view) {
-    if (view.getVisibility() != View.VISIBLE) {
-      return null;
-    }
-    if (ViewCompat.isNestedScrollingEnabled(view)) {
-      return view;
-    }
-    if (view instanceof ViewGroup) {
-      ViewGroup group = (ViewGroup) view;
-      for (int i = 0, count = group.getChildCount(); i < count; i++) {
-        View scrollingChild = findScrollingChild(group.getChildAt(i));
-        if (scrollingChild != null) {
-          return scrollingChild;
-        }
-      }
-    }
-    return null;
   }
 
   private boolean shouldHandleDraggingWithHelper() {
@@ -743,11 +745,11 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
       return 0;
     }
     velocityTracker.computeCurrentVelocity(1000, maximumVelocity);
-    return velocityTracker.getXVelocity(activePointerId);
+    return velocityTracker.getXVelocity();
   }
 
   private void startSettling(View child, @StableSheetState int state, boolean isReleasingView) {
-    boolean settling = sheetDelegate.isSettling(child, state, isReleasingView);
+    boolean settling = isSettling(child, state, isReleasingView);
     if (settling) {
       setStateInternal(STATE_SETTLING);
       stateSettlingTracker.continueSettlingToState(state);
@@ -756,14 +758,27 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
     }
   }
 
-  int getOutwardEdgeOffsetForState(@StableSheetState int state) {
+  /**
+   * Determines whether the sheet is currently settling to a target {@link StableSheetState} using
+   * {@link StateSettlingTracker}.
+   */
+  private boolean isSettling(View child, int state, boolean isReleasingView) {
+    int left = getOuterEdgeOffsetForState(state);
+    ViewDragHelper viewDragHelper = getViewDragHelper();
+    return viewDragHelper != null
+        && (isReleasingView
+            ? viewDragHelper.settleCapturedViewAt(left, child.getTop())
+            : viewDragHelper.smoothSlideViewTo(child, left, child.getTop()));
+  }
+
+  int getOuterEdgeOffsetForState(@StableSheetState int state) {
     switch (state) {
       case STATE_EXPANDED:
         return getExpandedOffset();
       case STATE_HIDDEN:
         return sheetDelegate.getHiddenOffset();
       default:
-        throw new IllegalArgumentException("Invalid state to get outward edge offset: " + state);
+        throw new IllegalArgumentException("Invalid state to get outer edge offset: " + state);
     }
   }
 
@@ -780,17 +795,24 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
           if (state == STATE_DRAGGING) {
             return false;
           }
-          if (touchingScrollingChild) {
-            return false;
-          }
-          if (state == STATE_EXPANDED && activePointerId == pointerId) {
-            View scroll = nestedScrollingChildRef != null ? nestedScrollingChildRef.get() : null;
-            if (scroll != null && scroll.canScrollVertically(-1)) {
-              // Let the content scroll.
-              return false;
+          return viewRef != null && viewRef.get() == child;
+        }
+
+        @Override
+        public void onViewPositionChanged(
+            @NonNull View changedView, int left, int top, int dx, int dy) {
+          View coplanarSiblingView = getCoplanarSiblingView();
+          if (coplanarSiblingView != null) {
+            MarginLayoutParams layoutParams =
+                (MarginLayoutParams) coplanarSiblingView.getLayoutParams();
+            if (layoutParams != null) {
+              sheetDelegate.updateCoplanarSiblingLayoutParams(
+                  layoutParams, changedView.getLeft(), changedView.getRight());
+              coplanarSiblingView.setLayoutParams(layoutParams);
             }
           }
-          return viewRef != null && viewRef.get() == child;
+
+          dispatchOnSlide(changedView, left);
         }
 
         @Override
@@ -803,8 +825,7 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
         @Override
         public void onViewReleased(@NonNull View releasedChild, float xVelocity, float yVelocity) {
           @StableSheetState
-          int targetState =
-              sheetDelegate.calculateTargetStateOnViewReleased(releasedChild, xVelocity, yVelocity);
+          int targetState = calculateTargetStateOnViewReleased(releasedChild, xVelocity, yVelocity);
           startSettling(releasedChild, targetState, shouldSkipSmoothAnimation());
         }
 
@@ -815,24 +836,122 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
 
         @Override
         public int clampViewPositionHorizontal(@NonNull View child, int left, int dx) {
-          return MathUtils.clamp(left, getExpandedOffset(), parentWidth);
+          return MathUtils.clamp(
+              left,
+              sheetDelegate.getMinViewPositionHorizontal(),
+              sheetDelegate.getMaxViewPositionHorizontal());
         }
 
         @Override
         public int getViewHorizontalDragRange(@NonNull View child) {
-          return parentWidth;
+          return childWidth + getInnerMargin();
         }
       };
 
   /**
-   * Checks whether a nested scroll should be enabled. If {@code false} all nested scrolls will be
-   * consumed by the side sheet.
-   *
-   * @hide
+   * Calculates the target {@link StableSheetState} state of the sheet after it's released from a
+   * drag, using the x and y velocity of the drag to determine the state.
    */
-  @RestrictTo(LIBRARY_GROUP)
-  public boolean isNestedScrollingCheckEnabled() {
-    return true;
+  @StableSheetState
+  private int calculateTargetStateOnViewReleased(
+      @NonNull View releasedChild, float xVelocity, float yVelocity) {
+    @StableSheetState int targetState;
+    if (isExpandingOutwards(xVelocity)) {
+      targetState = STATE_EXPANDED;
+
+    } else if (shouldHide(releasedChild, xVelocity)) {
+      // Hide if the view was either released close to the inner edge or it was a significant
+      // horizontal swipe; otherwise settle to expanded state.
+      if (sheetDelegate.isSwipeSignificant(xVelocity, yVelocity)
+          || sheetDelegate.isReleasedCloseToInnerEdge(releasedChild)) {
+        targetState = STATE_HIDDEN;
+      } else {
+        targetState = STATE_EXPANDED;
+      }
+    } else if (xVelocity == 0f || !SheetUtils.isSwipeMostlyHorizontal(xVelocity, yVelocity)) {
+      // If the X velocity is 0 or the swipe was mostly vertical, indicated by the Y
+      // velocity being greater than the X velocity, settle to the nearest correct state.
+      int currentLeft = releasedChild.getLeft();
+      if (Math.abs(currentLeft - getExpandedOffset())
+          < Math.abs(currentLeft - sheetDelegate.getHiddenOffset())) {
+        targetState = STATE_EXPANDED;
+      } else {
+        targetState = STATE_HIDDEN;
+      }
+    } else { // Moving inwards; collapse inwards and hide.
+      targetState = STATE_HIDDEN;
+    }
+    return targetState;
+  }
+
+  private boolean isExpandingOutwards(float xVelocity) {
+    return sheetDelegate.isExpandingOutwards(xVelocity);
+  }
+
+  private void dispatchOnSlide(@NonNull View child, int outerEdge) {
+    if (!callbacks.isEmpty()) {
+      float slideOffset = sheetDelegate.calculateSlideOffset(outerEdge);
+      for (SheetCallback callback : callbacks) {
+        callback.onSlide(child, slideOffset);
+      }
+    }
+  }
+
+  /**
+   * Set the sibling id to use for coplanar sheet expansion. If a coplanar sibling has previously
+   * been set either by this method or via {@link #setCoplanarSiblingView(View)}, that View
+   * reference will be cleared in favor of this new coplanar sibling reference.
+   *
+   * @param coplanarSiblingViewId the id of the coplanar sibling
+   */
+  public void setCoplanarSiblingViewId(@IdRes int coplanarSiblingViewId) {
+    this.coplanarSiblingViewId = coplanarSiblingViewId;
+    // Clear any potential coplanar sibling view to make sure that we use this view id rather than
+    // an existing coplanar sibling view.
+    clearCoplanarSiblingView();
+    // Request layout to find the view and trigger a layout pass.
+    if (viewRef != null) {
+      View view = viewRef.get();
+      if (coplanarSiblingViewId != View.NO_ID && view.isLaidOut()) {
+        view.requestLayout();
+      }
+    }
+  }
+
+  /**
+   * Set the sibling view to use for coplanar sheet expansion. If a coplanar sibling has previously
+   * been set either by this method or via {@link #setCoplanarSiblingViewId(int)}, that reference
+   * will be cleared in favor of this new coplanar sibling reference.
+   *
+   * @param coplanarSiblingView the sibling view to squash during coplanar expansion
+   */
+  public void setCoplanarSiblingView(@Nullable View coplanarSiblingView) {
+    this.coplanarSiblingViewId = View.NO_ID;
+    if (coplanarSiblingView == null) {
+      clearCoplanarSiblingView();
+    } else {
+      this.coplanarSiblingViewRef = new WeakReference<>(coplanarSiblingView);
+      // Request layout to make the new view take effect.
+      if (viewRef != null) {
+        View view = viewRef.get();
+        if (view.isLaidOut()) {
+          view.requestLayout();
+        }
+      }
+    }
+  }
+
+  /** Returns the sibling view that is used for coplanar sheet expansion. */
+  @Nullable
+  public View getCoplanarSiblingView() {
+    return coplanarSiblingViewRef != null ? coplanarSiblingViewRef.get() : null;
+  }
+
+  private void clearCoplanarSiblingView() {
+    if (this.coplanarSiblingViewRef != null) {
+      this.coplanarSiblingViewRef.clear();
+    }
+    this.coplanarSiblingViewRef = null;
   }
 
   /**
@@ -857,6 +976,111 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
     return lastStableState;
   }
 
+  @Override
+  public void startBackProgress(@NonNull BackEventCompat backEvent) {
+    if (sideContainerBackHelper == null) {
+      return;
+    }
+    sideContainerBackHelper.startBackProgress(backEvent);
+  }
+
+  @Override
+  public void updateBackProgress(@NonNull BackEventCompat backEvent) {
+    if (sideContainerBackHelper == null) {
+      return;
+    }
+    sideContainerBackHelper.updateBackProgress(backEvent, getGravityFromSheetEdge());
+
+    updateCoplanarSiblingBackProgress();
+  }
+
+  private void updateCoplanarSiblingBackProgress() {
+    if (viewRef == null || viewRef.get() == null) {
+      return;
+    }
+    View sheet = viewRef.get();
+
+    View coplanarSiblingView = getCoplanarSiblingView();
+    if (coplanarSiblingView == null) {
+      return;
+    }
+
+    MarginLayoutParams coplanarSiblingLayoutParams =
+        (MarginLayoutParams) coplanarSiblingView.getLayoutParams();
+    if (coplanarSiblingLayoutParams == null) {
+      return;
+    }
+
+    int updatedCoplanarSiblingAdjacentMargin = (int) (childWidth * sheet.getScaleX() + innerMargin);
+    sheetDelegate.updateCoplanarSiblingAdjacentMargin(
+        coplanarSiblingLayoutParams, updatedCoplanarSiblingAdjacentMargin);
+    coplanarSiblingView.requestLayout();
+  }
+
+  @Override
+  public void handleBackInvoked() {
+    if (sideContainerBackHelper == null) {
+      return;
+    }
+    BackEventCompat backEvent = sideContainerBackHelper.onHandleBackInvoked();
+    if (backEvent == null || VERSION.SDK_INT < VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      setState(STATE_HIDDEN);
+      return;
+    }
+
+    sideContainerBackHelper.finishBackProgress(
+        backEvent,
+        getGravityFromSheetEdge(),
+        new AnimatorListenerAdapter() {
+          @Override
+          public void onAnimationEnd(Animator animation) {
+            setStateInternal(STATE_HIDDEN);
+            if (viewRef != null && viewRef.get() != null) {
+              viewRef.get().requestLayout();
+            }
+          }
+        },
+        getCoplanarFinishAnimatorUpdateListener());
+  }
+
+  @Nullable
+  private AnimatorUpdateListener getCoplanarFinishAnimatorUpdateListener() {
+    View coplanarSiblingView = getCoplanarSiblingView();
+    if (coplanarSiblingView == null) {
+      return null;
+    }
+
+    MarginLayoutParams coplanarSiblingLayoutParams =
+        (MarginLayoutParams) coplanarSiblingView.getLayoutParams();
+    if (coplanarSiblingLayoutParams == null) {
+      return null;
+    }
+
+    int coplanarSiblingAdjacentMargin =
+        sheetDelegate.getCoplanarSiblingAdjacentMargin(coplanarSiblingLayoutParams);
+
+    return animation -> {
+      sheetDelegate.updateCoplanarSiblingAdjacentMargin(
+          coplanarSiblingLayoutParams,
+          AnimationUtils.lerp(coplanarSiblingAdjacentMargin, 0, animation.getAnimatedFraction()));
+      coplanarSiblingView.requestLayout();
+    };
+  }
+
+  @Override
+  public void cancelBackProgress() {
+    if (sideContainerBackHelper == null) {
+      return;
+    }
+    sideContainerBackHelper.cancelBackProgress();
+  }
+
+  @VisibleForTesting
+  @Nullable
+  MaterialSideContainerBackHelper getBackHelper() {
+    return sideContainerBackHelper;
+  }
+
   class StateSettlingTracker {
     @StableSheetState private int targetState;
     private boolean isContinueSettlingRunnablePosted;
@@ -878,7 +1102,7 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
       }
       this.targetState = targetState;
       if (!isContinueSettlingRunnablePosted) {
-        ViewCompat.postOnAnimation(viewRef.get(), continueSettlingRunnable);
+        viewRef.get().postOnAnimation(continueSettlingRunnable);
         isContinueSettlingRunnablePosted = true;
       }
     }
@@ -949,56 +1173,6 @@ public final class SideSheetBehavior<V extends View> extends CoordinatorLayout.B
       throw new IllegalArgumentException("The view is not associated with SideSheetBehavior");
     }
     return (SideSheetBehavior<V>) behavior;
-  }
-
-  private void updateImportantForAccessibility(boolean expanded) {
-    if (viewRef == null) {
-      return;
-    }
-
-    ViewParent viewParent = viewRef.get().getParent();
-    if (!(viewParent instanceof CoordinatorLayout)) {
-      return;
-    }
-
-    CoordinatorLayout parent = (CoordinatorLayout) viewParent;
-    final int childCount = parent.getChildCount();
-    if ((VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN) && expanded) {
-      if (importantForAccessibilityMap == null) {
-        importantForAccessibilityMap = new HashMap<>(childCount);
-      } else {
-        // The important for accessibility values of the child views have been saved already.
-        return;
-      }
-    }
-
-    for (int i = 0; i < childCount; i++) {
-      final View child = parent.getChildAt(i);
-      if (child == viewRef.get()) {
-        continue;
-      }
-      if (expanded) {
-        // Saves the important for accessibility value of the child view.
-        if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN) {
-          importantForAccessibilityMap.put(child, child.getImportantForAccessibility());
-        }
-        if (UPDATE_IMPORTANT_FOR_ACCESSIBILITY_ON_SIBLINGS) {
-          ViewCompat.setImportantForAccessibility(
-              child, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-          // If the siblings of the sheet have been set to not important for a11y, move the focus
-          // to the sheet when expanded.
-          viewRef.get().sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED);
-        }
-      } else {
-        if (UPDATE_IMPORTANT_FOR_ACCESSIBILITY_ON_SIBLINGS
-            && importantForAccessibilityMap != null
-            && importantForAccessibilityMap.containsKey(child)) {
-          // Restores the original important for accessibility value of the child view.
-          ViewCompat.setImportantForAccessibility(child, importantForAccessibilityMap.get(child));
-        }
-        importantForAccessibilityMap = null;
-      }
-    }
   }
 
   private void updateAccessibilityActions() {
