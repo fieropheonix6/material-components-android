@@ -17,12 +17,18 @@ represents the primary action of a screen.
 
 **Contents**
 
+*   [Design and API Documentation](#design-and-api-documentation)
 *   [Using FABs](#using-fabs)
 *   [FABs](#fabs)
 *   [Small FABs](#small-fabs)
 *   [Large FABs](#large-fabs)
 *   [Extended FABs](#extended-fabs)
 *   [Theming FABs](#theming-fabs)
+
+## Design and API Documentation
+
+*   [Google Material3 Spec](https://material.io/components/floating-action-button/overview)
+*   [API reference](https://developer.android.com/reference/com/google/android/material/floatingactionbutton/package-summary)
 
 ## Using FABs
 
@@ -394,6 +400,7 @@ Element                       | Attribute                                       
 **Stroke color**              | `app:strokeColor`                                                                          | `setStrokeColor`<br/>`getStrokeColor`                              | `null`
 **Stroke width**              | `app:strokeWidth`                                                                          | `setStrokeWidth`<br/>`getStrokeWidth`                              | `0dp`
 **Size**                      | `app:collapsedSize`                                                                        | N/A                                                                |
+**Extend Strategy**           | `app:extendStrategy`                                                                       | N/A                                                                | `wrap_content`
 **Shape**                     | `app:shapeAppearance`<br/>`app:shapeAppearanceOverlay`                                     | `setShapeAppearanceModel`<br/>`getShapeAppearanceModel`            | `ShapeAppearanceOverlay.Material3.FloatingActionButton`<br/>
 **Elevation**                 | `app:elevation`                                                                            | `setElevation`<br/>`getElevation`                                  | `6dp`
 **Hovered/Focused elevation** | `app:hoveredFocusedTranslationZ`                                                           | N/A                                                                | `2dp`

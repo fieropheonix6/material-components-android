@@ -20,8 +20,6 @@ import com.google.android.material.R;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Canvas;
-import android.os.Build.VERSION;
-import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -35,7 +33,6 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup;
-import android.view.accessibility.AccessibilityEvent;
 import android.widget.GridView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -245,7 +242,21 @@ public final class MaterialCalendar<S> extends PickerFragment<S> {
       new PagerSnapHelper().attachToRecyclerView(recyclerView);
     }
     recyclerView.scrollToPosition(monthsPagerAdapter.getPosition(current));
+    setUpForAccessibility();
     return root;
+  }
+
+  private void setUpForAccessibility() {
+    ViewCompat.setAccessibilityDelegate(
+        recyclerView,
+        new AccessibilityDelegateCompat() {
+          @Override
+          public void onInitializeAccessibilityNodeInfo(
+              View view, @NonNull AccessibilityNodeInfoCompat accessibilityNodeInfoCompat) {
+            super.onInitializeAccessibilityNodeInfo(view, accessibilityNodeInfoCompat);
+            accessibilityNodeInfoCompat.setScrollable(false);
+          }
+        });
   }
 
   @NonNull
@@ -288,9 +299,12 @@ public final class MaterialCalendar<S> extends PickerFragment<S> {
             }
             int top = viewInRow.getTop() + calendarStyle.year.getTopInset();
             int bottom = viewInRow.getBottom() - calendarStyle.year.getBottomInset();
-            int left = row == firstRow ? firstView.getLeft() + firstView.getWidth() / 2 : 0;
+            int left =
+                row == firstRow && firstView != null
+                    ? firstView.getLeft() + firstView.getWidth() / 2
+                    : 0;
             int right =
-                row == lastRow
+                row == lastRow && lastView != null
                     ? lastView.getLeft() + lastView.getWidth() / 2
                     : recyclerView.getWidth();
             canvas.drawRect(left, top, right, bottom, calendarStyle.rangeFill);
@@ -381,8 +395,12 @@ public final class MaterialCalendar<S> extends PickerFragment<S> {
   void toggleVisibleSelector() {
     if (calendarSelector == CalendarSelector.YEAR) {
       setSelector(CalendarSelector.DAY);
+      recyclerView.announceForAccessibility(
+          getString(R.string.mtrl_picker_toggled_to_day_selection));
     } else if (calendarSelector == CalendarSelector.DAY) {
       setSelector(CalendarSelector.YEAR);
+      yearSelector.announceForAccessibility(
+          getString(R.string.mtrl_picker_toggled_to_year_selection));
     }
   }
 
@@ -432,11 +450,7 @@ public final class MaterialCalendar<S> extends PickerFragment<S> {
           public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
             if (newState == RecyclerView.SCROLL_STATE_IDLE) {
               CharSequence announcementText = monthDropSelect.getText();
-              if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN) {
-                recyclerView.announceForAccessibility(announcementText);
-              } else {
-                recyclerView.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
-              }
+              recyclerView.announceForAccessibility(announcementText);
             }
           }
         });

@@ -18,8 +18,6 @@ package com.google.android.material.sidesheet;
 
 import com.google.android.material.R;
 
-import static androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP;
-
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.os.Build.VERSION;
@@ -27,37 +25,36 @@ import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
 import androidx.appcompat.app.AppCompatDialog;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager.LayoutParams;
 import android.widget.FrameLayout;
 import androidx.annotation.AttrRes;
+import androidx.annotation.GravityInt;
 import androidx.annotation.IdRes;
 import androidx.annotation.LayoutRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.RestrictTo;
 import androidx.annotation.StyleRes;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.view.AccessibilityDelegateCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
+import com.google.android.material.motion.MaterialBackOrchestrator;
 import com.google.android.material.sidesheet.Sheet.StableSheetState;
 
 /**
  * Base class for {@link android.app.Dialog}s styled as a sheet, to be used by sheet dialog
  * implementations such as side sheets and bottom sheets.
- *
- * @hide For internal use only.
  */
-@RestrictTo(LIBRARY_GROUP)
-public abstract class SheetDialog extends AppCompatDialog {
+abstract class SheetDialog<C extends SheetCallback> extends AppCompatDialog {
 
   private static final int COORDINATOR_LAYOUT_ID = R.id.coordinator;
   private static final int TOUCH_OUTSIDE_ID = R.id.touch_outside;
 
-  @Nullable private Sheet behavior;
+  @Nullable private Sheet<C> behavior;
   @Nullable private FrameLayout container;
   @Nullable private FrameLayout sheet;
 
@@ -67,9 +64,7 @@ public abstract class SheetDialog extends AppCompatDialog {
   private boolean canceledOnTouchOutside = true;
   private boolean canceledOnTouchOutsideSet;
 
-  SheetDialog(@NonNull Context context) {
-    this(context, 0, 0, 0);
-  }
+  @Nullable private MaterialBackOrchestrator backOrchestrator;
 
   SheetDialog(
       @NonNull Context context,
@@ -102,17 +97,15 @@ public abstract class SheetDialog extends AppCompatDialog {
     super.onCreate(savedInstanceState);
     Window window = getWindow();
     if (window != null) {
-      if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
-        // The status bar should always be transparent because of the window animation.
-        window.setStatusBarColor(0);
+      // The status bar should always be transparent because of the window animation.
+      window.setStatusBarColor(0);
 
-        window.addFlags(LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-        if (VERSION.SDK_INT < VERSION_CODES.M) {
-          // It can be transparent for API 23 and above because we will handle switching the status
-          // bar icons to light or dark as appropriate. For API 21 and API 22 we just set the
-          // translucent status bar.
-          window.addFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS);
-        }
+      window.addFlags(LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+      if (VERSION.SDK_INT < VERSION_CODES.M) {
+        // It can be transparent for API 23 and above because we will handle switching the status
+        // bar icons to light or dark as appropriate. For API 21 and API 22 we just set the
+        // translucent status bar.
+        window.addFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS);
       }
       window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
@@ -124,6 +117,20 @@ public abstract class SheetDialog extends AppCompatDialog {
     if (this.cancelable != cancelable) {
       this.cancelable = cancelable;
     }
+    if (getWindow() != null) {
+      updateListeningForBackCallbacks();
+    }
+  }
+
+  private void updateListeningForBackCallbacks() {
+    if (backOrchestrator == null) {
+      return;
+    }
+    if (cancelable) {
+      backOrchestrator.startListeningForBackCallbacks();
+    } else {
+      backOrchestrator.stopListeningForBackCallbacks();
+    }
   }
 
   @Override
@@ -134,20 +141,35 @@ public abstract class SheetDialog extends AppCompatDialog {
     }
   }
 
+  @Override
+  public void onAttachedToWindow() {
+    super.onAttachedToWindow();
+    maybeUpdateWindowAnimationsBasedOnLayoutDirection();
+    updateListeningForBackCallbacks();
+  }
+
+  @Override
+  public void onDetachedFromWindow() {
+    super.onDetachedFromWindow();
+    if (backOrchestrator != null) {
+      backOrchestrator.stopListeningForBackCallbacks();
+    }
+  }
+
   /**
    * This function can be called from a few different use cases, including swiping the dialog away
    * or calling `dismiss()` from a `SideSheetDialogFragment`, tapping outside a dialog, etc...
    *
    * <p>The default animation to dismiss this dialog is a fade-out transition through a
-   * windowAnimation. Set {@link #setDismissWithAnimation(boolean)} to true if you want to utilize
-   * the sheet animation instead.
+   * windowAnimation. Set {@link #setDismissWithSheetAnimationEnabled(boolean)} to true if you want
+   * to utilize the sheet animation instead.
    *
    * <p>If this function is called from a swipe interaction, or dismissWithAnimation is false, then
    * keep the default behavior.
    */
   @Override
   public void cancel() {
-    Sheet behavior = getBehavior();
+    Sheet<C> behavior = getBehavior();
 
     if (!dismissWithAnimation || behavior.getState() == Sheet.STATE_HIDDEN) {
       super.cancel();
@@ -167,20 +189,20 @@ public abstract class SheetDialog extends AppCompatDialog {
   }
 
   /**
-   * Set to perform the swipe away animation when dismissing instead of the window animation for the
-   * dialog.
+   * Set whether to perform the swipe away animation on the sheet when dismissing, rather than the
+   * window animation for the dialog.
    *
    * @param dismissWithAnimation True if swipe away animation should be used when dismissing.
    */
-  public void setDismissWithAnimation(boolean dismissWithAnimation) {
+  public void setDismissWithSheetAnimationEnabled(boolean dismissWithAnimation) {
     this.dismissWithAnimation = dismissWithAnimation;
   }
 
   /**
-   * Returns if dismissing will perform the swipe away animation on the sheet, rather than the
+   * Returns whether dismissing will perform the swipe away animation on the sheet, rather than the
    * window animation for the dialog.
    */
-  public boolean getDismissWithAnimation() {
+  public boolean isDismissWithSheetAnimationEnabled() {
     return dismissWithAnimation;
   }
 
@@ -190,8 +212,12 @@ public abstract class SheetDialog extends AppCompatDialog {
       container = (FrameLayout) View.inflate(getContext(), getLayoutResId(), null);
       sheet = container.findViewById(getDialogId());
       behavior = getBehaviorFromSheet(sheet);
+      addSheetCancelOnHideCallback(behavior);
+      backOrchestrator = new MaterialBackOrchestrator(behavior, sheet);
     }
   }
+
+  abstract void addSheetCancelOnHideCallback(Sheet<C> behavior);
 
   @NonNull
   private FrameLayout getContainer() {
@@ -210,7 +236,7 @@ public abstract class SheetDialog extends AppCompatDialog {
   }
 
   @NonNull
-  Sheet getBehavior() {
+  Sheet<C> getBehavior() {
     if (this.behavior == null) {
       // The content hasn't been set, so the behavior doesn't exist yet. Let's create it.
       ensureContainerAndBehavior();
@@ -272,7 +298,49 @@ public abstract class SheetDialog extends AppCompatDialog {
     return container;
   }
 
-  boolean shouldWindowCloseOnTouchOutside() {
+  /**
+   * Set the edge which the sheet should originate from.
+   *
+   * <p>Note: This method should be called when the sheet is initialized, before it is shown.
+   * Runtime sheet edge changes are not supported.
+   *
+   * @throws IllegalStateException if the sheet is null or has already been laid out
+   * @param gravity the edge from which the sheet and its animations should originate.
+   */
+  public void setSheetEdge(@GravityInt int gravity) {
+    if (sheet == null) {
+      throw new IllegalStateException(
+          "Sheet view reference is null; sheet edge cannot be changed if the sheet view is null.");
+    }
+    if (sheet.isLaidOut()) {
+      throw new IllegalStateException(
+          "Sheet view has been laid out; sheet edge cannot be changed once the sheet has been laid"
+              + " out.");
+    }
+    ViewGroup.LayoutParams layoutParams = sheet.getLayoutParams();
+    if (layoutParams instanceof CoordinatorLayout.LayoutParams) {
+      ((CoordinatorLayout.LayoutParams) layoutParams).gravity = gravity;
+      maybeUpdateWindowAnimationsBasedOnLayoutDirection();
+    }
+  }
+
+  private void maybeUpdateWindowAnimationsBasedOnLayoutDirection() {
+    Window window = getWindow();
+    if (window != null
+        && sheet != null
+        && sheet.getLayoutParams() instanceof CoordinatorLayout.LayoutParams) {
+      CoordinatorLayout.LayoutParams layoutParams =
+          (CoordinatorLayout.LayoutParams) sheet.getLayoutParams();
+      int absoluteGravity =
+          Gravity.getAbsoluteGravity(layoutParams.gravity, sheet.getLayoutDirection());
+      window.setWindowAnimations(
+          absoluteGravity == Gravity.LEFT
+              ? R.style.Animation_Material3_SideSheetDialog_Left
+              : R.style.Animation_Material3_SideSheetDialog_Right);
+    }
+  }
+
+  private boolean shouldWindowCloseOnTouchOutside() {
     if (!canceledOnTouchOutsideSet) {
       TypedArray a =
           getContext().obtainStyledAttributes(new int[] {android.R.attr.windowCloseOnTouchOutside});
@@ -302,14 +370,14 @@ public abstract class SheetDialog extends AppCompatDialog {
   }
 
   @LayoutRes
-  protected abstract int getLayoutResId();
+  abstract int getLayoutResId();
 
   @IdRes
-  protected abstract int getDialogId();
+  abstract int getDialogId();
 
   @NonNull
-  protected abstract Sheet getBehaviorFromSheet(@NonNull FrameLayout sheet);
+  abstract Sheet<C> getBehaviorFromSheet(@NonNull FrameLayout sheet);
 
   @StableSheetState
-  protected abstract int getStateOnStart();
+  abstract int getStateOnStart();
 }
